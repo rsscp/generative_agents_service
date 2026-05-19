@@ -11,21 +11,20 @@ sys.path.append('../../')
 
 from global_methods import *
 from typing import Dict, Any
-from api_classes import ActionDef
+from persona.aid import Action
 
 class Blackboard: 
   
   def __init__(
     self,
     initial_state: Dict[str, Any],
-    available_actions: Dict[str, ActionDef]
   ): 
 
     # Memory
     self.att_bandwidth = 3
     self.retention = 5
     self.state = initial_state
-    self.available_actions = available_actions
+    self.available_actions: Dict[str, Action] = {}
     self.cache_lists: Dict[str, list] = {}
     self.perception = []
 
@@ -42,6 +41,10 @@ class Blackboard:
     # Planning
     self.curr_plan = []
     self.curr_action = None
+
+
+  def set_actions(self, actions: Dict[str, Action]):
+    self.available_actions = actions
 
 
   def get_f_daily_schedule_index(self, advance=0):

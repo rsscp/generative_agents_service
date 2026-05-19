@@ -35,21 +35,32 @@ from utils import *
 from maze import *
 from persona.persona import *
 
-from persona.agent import Agent
+from typing import Dict
+from persona.agent import AgentSetup, Agent
 
 
 class Simulation: 
     
-  def __init__(self, id, memory_schemas, core_schemas, plan_schemas):
-
+  def __init__(self, id: str):
     self.id = id
-    self.agents: list[Agent] = []
+    self.agents_setup: Dict[str, AgentSetup] = {}
+    self.agents: Dict[str, Agent] = {}
     self.interact_groups = {}                          #TODO
     self.lod_groups = {}                            #TODO
 
 
-  def add_agent(self, agent):
-    self.agents.append(agent)
+  def add_agent_setup(self, agent_id: str, agent: AgentSetup):
+    self.agents_setup[agent_id] = agent
+
+  
+  def add_agent(self, agent_id: str):
+    agent = self.agents_setup[agent_id].create_agent()
+    self.agents[agent_id] = agent
+    self.agents_setup.pop(agent_id)
+
+
+  def get_agent(self, agent_id: str):
+    return self.agents[agent_id]
 
 
   def save(self): 

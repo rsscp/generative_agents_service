@@ -1,18 +1,16 @@
+from persona.aid import Action, SchemaField
 from utils import merge
 from persona.agent import Agent
 from typing import Dict
-from api_classes import MemoryList, ActionDef, Ruleset, Schema, FieldSchema
+from api_classes import MemoryList, Contract
 
 import json
 import requests
 
 
-class Contract:
-    state_keys: list[str]
-    memory_keys: list[str]
+def plan(agent: Agent):
 
-
-def plan(agent: Agent, contract: Contract):
+    contract = agent.plan_contract
 
     common_keys_state = set(contract.state_keys) & set(agent.blackboard.state.keys())
     common_keys_cache = set(contract.memory_keys) & set(agent.blackboard.cache_lists.keys())
@@ -30,18 +28,21 @@ def plan(agent: Agent, contract: Contract):
         state = relevant_state,
         memory = relevant_memory,
         goal = agent.goal,
-        plan_ruleset = agent.plan_gen_ruleset,
-        plan_schema = agent.plan_gen_schema,
+        plan_instructions = agent.plan_instructions,
+        plan_main_schema = agent.plan_main_schema,
+        plan_aux_schemas = agent.plan_aux_schemas
     )
+
+    print("SYSTEM_PROMPT:\n\n" + system_prompt + "\n\n")
+    print("USER_PROMPT:\n\n" + user_prompt + "\n\n")
 
     return llm_request(system_prompt, user_prompt)
 
 
 def create_plan_prompt(
-    # System prompt
-    plan_ruleset: Ruleset,
-    plan_schema: Schema,
-    # User prompt
+    plan_instructions: list[str],
+    plan_main_schema: Dict[str, SchemaField],
+    plan_aux_schemas: Dict[str, Dict[str, SchemaField]],
     goal: str,
     state: Dict[str, Dict],
     memory: list,
@@ -51,31 +52,48 @@ def create_plan_prompt(
 
     ### System prompt
 
-    system_prompt += "You are a planner for a video game agent and your task is to create a step by step plan that will be followed by the agent."
+    system_prompt += "# Instructions\n"
+    system_prompt += "".join([f"- {i}\n" for i in plan_instructions]) + "\n\n"
 
-    system_prompt += "While creating the plan you must follow these instructions:\n"
-    system_prompt += json.dumps(plan_ruleset.dict()) + "\n"
+    system_prompt += "# Main Schema\n"
+    fields, schema = get_schema_ready(plan_main_schema)
+    system_prompt += create_schema_str("##", fields, schema)
+    system_prompt += "\n"
 
-    system_prompt += "Your response should include only a JSON object that describes the plan and each step in the plan is an object following this schema:\n"
-    system_prompt += json.dumps(plan_schema.dict()) + "\n"
+    if len(plan_aux_schemas.items()) > 0:
+        system_prompt += "# Auxiliary Schemas\n"
+        for k, v in plan_aux_schemas.items():
+            system_prompt += f"## {k}\n"
+            fields, schema = get_schema_ready(v)
+            system_prompt += create_schema_str("###", fields, schema)
+        system_prompt += "\n"
 
     ### User prompt
 
-    user_prompt += "Your current goal is "
-    user_prompt += goal + "\n"
+    user_prompt += "# Goal\n"
+    user_prompt += goal + "\n\n"
 
-    user_prompt += "The current state of your agent is described by this object:\n"
-    user_prompt += json.dumps(state) + "\n"
+    user_prompt += "# State\n"
+    user_prompt += json.dumps(state) + "\n\n"
 
-    user_prompt += "The current memory of your agent contains the following events/thoughts:\n"
-    user_prompt += json.dumps(memory) + "\n"
+    user_prompt += "# Memory\n"
+    user_prompt += json.dumps(memory) + "\n\n"
 
     return system_prompt, user_prompt
 
 
-def relevance_filter(memories: Dict[str, MemoryList]):
+def create_schema_str(header: str, fields: list[str], schema: Dict) -> str:
+    string = ""
+    string += f"{header} Fields\n"
+    string += "".join([f"- {f}\n" for f in fields])
+    string += f"{header} Schema\n"
+    string += json.dumps(schema) + "\n"
+    return string
+
+
+def relevance_filter(memories: Dict[str, list]):
     memories_list = []
-    [memories_list + l.memories for l in [v for k, v in memories.items()]]
+    [memories_list + v for k, v in memories.items()]
     return memories_list
 
 
@@ -105,6 +123,25 @@ def llm_request(system_prompt: str, user_prompt: str, model: str = "llama3.2:3b"
     return data["message"]["content"]
 
 
+def get_schema_ready(schema: Dict[str, SchemaField]) -> tuple[list[str], Dict]:
+    field_list = []
+    json_schema = {}
+
+    for k, v in schema.items():
+        field_item = f"{k} > "
+        field_item += f"\t- Field of type {v.field_type}. "
+        field_item += f"\t- {v.description}"
+        field_item += f"\t- {v.guidelines}"
+        field_list.append(field_item)
+
+        if (v.field_type == "object"):
+            field_list_add, json_schema_add = get_schema_ready(v.sub_fields)
+            json_schema[k] = json_schema_add
+            field_list += field_list_add
+        else:
+            json_schema[k] = f"<{v.field_type}>"
+
+    return field_list, json_schema
 
 
 
@@ -113,6 +150,8 @@ def llm_request(system_prompt: str, user_prompt: str, model: str = "llama3.2:3b"
 
 
 
+
+'''
 ### TEST CODE WORKING
 
 
@@ -174,9 +213,11 @@ agent = Agent(
     None
 )
 
-contract = Contract()
-contract.state_keys = ["hunger", "sleepy"]
-contract.memory_keys = ["objects"]
+contract = Contract(
+    state_keys = ["hunger", "sleepy"],
+    memory_keys = ["objects"]    
+)
 
 
 print(plan(agent, contract))
+'''

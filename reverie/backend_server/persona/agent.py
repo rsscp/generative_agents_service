@@ -12,6 +12,7 @@ import math
 import sys
 import datetime
 import random
+
 sys.path.append('../')
 
 from global_methods import *
@@ -31,220 +32,167 @@ from typing import Dict, Any
 
 from persona.memory_structures.blackboard import Blackboard
 from persona.memory_structures.recall import Recall
-from api_classes import Schema, Ruleset, ActionDef, MemoryList
+from api_classes import Contract, MemoryList
+from persona.aid import Action, Configuration, SchemaField
+
+STANDARD_INSTRUCTIONS = [
+  "Do not make up facts",
+  "All information used on planning, apart from what is considered common sense, will be pulled from this message."
+  "You response will follow the JSON structure specified in Schema.",
+  "Always complying with JSON formating."
+]
+
+
+class MissingAgentRequirements(Exception):
+    def __init__(self, missing_requirements: list[str]):
+        self.missing_requirements = missing_requirements
+        message = (
+            "Agent is missing required configuration: "
+            + ", ".join(missing_requirements)
+        )
+        super().__init__(message)
+
 
 class Agent:
 
   def __init__(
     self,
-    agent_id: str,
+    goal: str,
+    blackboard: Blackboard,
+    recall: Recall,
+    config: Configuration,
+    plan_contract: Contract,
+    plan_instructions: list[str],
+    plan_main_schema: Dict[str, SchemaField],
+    plan_aux_schemas: Dict[str, Dict[str, SchemaField]],
+    thought_contract: Contract,
+    thought_instructions: list[str],
+    thought_main_schema: Dict[str, SchemaField],
+    thought_aux_schemas: Dict[str, Dict[str, SchemaField]]
+  ):
+    self.goal = goal
+    self.blackboard = blackboard
+    self.recall = recall
+    self.config = config
+    self.plan_contract = plan_contract
+    self.plan_instructions = STANDARD_INSTRUCTIONS + plan_instructions
+    self.plan_main_schema = plan_main_schema
+    self.plan_aux_schemas = plan_aux_schemas
+    self.thought_contract = thought_contract
+    self.thought_instructions = STANDARD_INSTRUCTIONS + thought_instructions
+    self.thought_main_schema = thought_main_schema
+    self.thought_aux_schemas = thought_aux_schemas
+
+
+# Temporary agent setup class with all optional fields
+# When all requirements are filled, the final agent can be created
+class AgentSetup:
+  
+  def __init__(
+    self,
     goal: str,
     initial_state: Dict[str, Any],
-    initial_memory_lists: Dict[str, MemoryList],
-    initial_config: Dict[str, Any],
-    available_actions: Dict[str, ActionDef],
-    plan_gen_ruleset: Ruleset,
-    plan_gen_schema: Schema,
-    thought_gen_ruleset: Ruleset,
-    thought_gen_schema: Schema
   ):
-    self.id = id
     self.goal = goal
-    self.blackboard = Blackboard(initial_state, available_actions)
-    self.recall = Recall(initial_memory_lists)
-    self.config = initial_config
-    self.plan_gen_ruleset= plan_gen_ruleset
-    self.plan_gen_schema = plan_gen_schema
-    self.thought_gen_ruleset = thought_gen_ruleset
-    self.thought_gen_schema = thought_gen_schema
+    self.blackboard = Blackboard(initial_state)
+
+    self.recall = None
+    self.config = None
+    self.plan_contract = None
+    self.plan_instructions = None
+    self.plan_main_schema = None
+    self.plan_aux_schemas = None
+    self.thought_contract = None
+    self.thought_instructions = None
+    self.thought_main_schema = None
+    self.thought_aux_schemas = None
 
 
-  def save(self, save_folder): 
-    """
-    Save persona's current state (i.e., memory). 
+  def set_config(self, config: Configuration):
+    self.config = config
 
-    INPUT: 
-      save_folder: The folder where we wil be saving our persona's state. 
-    OUTPUT: 
-      None
-    """
-    # Spatial memory contains a tree in a json format. 
-    # e.g., {"double studio": 
-    #         {"double studio": 
-    #           {"bedroom 2": 
-    #             ["painting", "easel", "closet", "bed"]}}}
-    f_s_mem = f"{save_folder}/spatial_memory.json"
-    self.s_mem.save(f_s_mem)
+
+  def set_memory_lists(self, memory_lists: Dict[str, list]):
+    self.recall = Recall(memory_lists)
+
+
+  def set_actions(self, actions: Dict[str, Action]):
+    self.blackboard.set_actions(actions)
+
+
+  # --- Planning requirements ---
+
+  def set_plan_contract(self, contract: Contract):
+    self.plan_contract = contract
+  
+  def set_plan_req(
+    self,
+    instructions: list[str],
+    main_schema: Dict[str, SchemaField],
+    aux_schemas: Dict[str, Dict[str, SchemaField]]
+  ):
+    self.plan_instructions = instructions
+    self.plan_main_schema = main_schema
+    self.plan_aux_schemas = aux_schemas
+
+
+  # --- Reflection requirements ---
+
+  def set_thought_contract(self, contract: Contract):
+    self.thought_contract = contract
+
+  def set_thought_req(
+    self,
+    instructions: list[str],
+    schema: Dict[str, SchemaField],
+    aux_schemas: list[Dict[str, SchemaField]]
+  ):
+    self.thought_instructions = instructions
+    self.thought_main_schema = schema
+    self.thought_aux_schemas = aux_schemas
+
+
+  def set_interaction_contracts(self):
+    pass #TODO Worry about interactions later
+
+
+  def create_agent(self) -> Agent:
+    checks = {
+      "memory": self.recall != None,
+      "configuration": self.config != None,
+      "contracts": self.plan_contract != None and self.thought_contract != None,
+      "planning requirements": self.plan_instructions != None and self.plan_main_schema != None and self.plan_aux_schemas != None
+    }
     
-    # Associative memory contains a csv with the following rows: 
-    # [event.type, event.created, event.expiration, s, p, o]
-    # e.g., event,2022-10-23 00:00:00,,Isabella Rodriguez,is,idle
-    f_a_mem = f"{save_folder}/associative_memory"
-    self.a_mem.save(f_a_mem)
+    print(f"{self.plan_instructions}, {self.plan_main_schema}")
 
-    # Scratch contains non-permanent data associated with the persona. When 
-    # it is saved, it takes a json form. When we load it, we move the values
-    # to Python variables. 
-    f_scratch = f"{save_folder}/scratch.json"
-    self.scratch.save(f_scratch)
-
-
-  def perceive(self, maze):
-    """
-    This function takes the current maze, and returns events that are 
-    happening around the persona. Importantly, perceive is guided by 
-    two key hyper-parameter for the  persona: 1) att_bandwidth, and 
-    2) retention. 
-
-    First, <att_bandwidth> determines the number of nearby events that the 
-    persona can perceive. Say there are 10 events that are within the vision
-    radius for the persona -- perceiving all 10 might be too much. So, the 
-    persona perceives the closest att_bandwidth number of events in case there
-    are too many events. 
-
-    Second, the persona does not want to perceive and think about the same 
-    event at each time step. That's where <retention> comes in -- there is 
-    temporal order to what the persona remembers. So if the persona's memory
-    contains the current surrounding events that happened within the most 
-    recent retention, there is no need to perceive that again. xx
-
-    INPUT: 
-      maze: Current <Maze> instance of the world. 
-    OUTPUT: 
-      a list of <ConceptNode> that are perceived and new. 
-        See associative_memory.py -- but to get you a sense of what it 
-        receives as its input: "s, p, o, desc, persona.scratch.curr_time"
-    """
-    return perceive(self, maze)
-
-
-  def retrieve(self, perceived):
-    """
-    This function takes the events that are perceived by the persona as input
-    and returns a set of related events and thoughts that the persona would 
-    need to consider as context when planning. 
-
-    INPUT: 
-      perceive: a list of <ConceptNode> that are perceived and new.  
-    OUTPUT: 
-      retrieved: dictionary of dictionary. The first layer specifies an event,
-                 while the latter layer specifies the "curr_event", "events", 
-                 and "thoughts" that are relevant.
-    """
-    return retrieve(self, perceived)
-
-
-  def plan(self, maze, personas, new_day, retrieved):
-    """
-    Main cognitive function of the chain. It takes the retrieved memory and 
-    perception, as well as the maze and the first day state to conduct both 
-    the long term and short term planning for the persona. 
-
-    INPUT: 
-      maze: Current <Maze> instance of the world. 
-      personas: A dictionary that contains all persona names as keys, and the 
-                Persona instance as values. 
-      new_day: This can take one of the three values. 
-        1) <Boolean> False -- It is not a "new day" cycle (if it is, we would
-           need to call the long term planning sequence for the persona). 
-        2) <String> "First day" -- It is literally the start of a simulation,
-           so not only is it a new day, but also it is the first day. 
-        2) <String> "New day" -- It is a new day. 
-      retrieved: dictionary of dictionary. The first layer specifies an event,
-                 while the latter layer specifies the "curr_event", "events", 
-                 and "thoughts" that are relevant.
-    OUTPUT 
-      The target action address of the persona (persona.scratch.act_address).
-    """
-    return plan(self, maze, personas, new_day, retrieved)
-
-
-  def execute(self, maze, personas, plan):
-    """
-    This function takes the agent's current plan and outputs a concrete 
-    execution (what object to use, and what tile to travel to). 
-
-    INPUT: 
-      maze: Current <Maze> instance of the world. 
-      personas: A dictionary that contains all persona names as keys, and the 
-                Persona instance as values. 
-      plan: The target action address of the persona  
-            (persona.scratch.act_address).
-    OUTPUT: 
-      execution: A triple set that contains the following components: 
-        <next_tile> is a x,y coordinate. e.g., (58, 9)
-        <pronunciatio> is an emoji.
-        <description> is a string description of the movement. e.g., 
-        writing her next novel (editing her novel) 
-        @ double studio:double studio:common room:sofa
-    """
-    return execute(self, maze, personas, plan)
-
-
-  def reflect(self):
-    """
-    Reviews the persona's memory and create new thoughts based on it. 
-
-    INPUT: 
-      None
-    OUTPUT: 
-      None
-    """
-    reflect(self)
-
-
-  def move(self, maze, personas, curr_tile, curr_time):
-    """
-    This is the main cognitive function where our main sequence is called. 
-
-    INPUT: 
-      maze: The Maze class of the current world. 
-      personas: A dictionary that contains all persona names as keys, and the 
-                Persona instance as values. 
-      curr_tile: A tuple that designates the persona's current tile location 
-                 in (row, col) form. e.g., (58, 39)
-      curr_time: datetime instance that indicates the game's current time. 
-    OUTPUT: 
-      execution: A triple set that contains the following components: 
-        <next_tile> is a x,y coordinate. e.g., (58, 9)
-        <pronunciatio> is an emoji.
-        <description> is a string description of the movement. e.g., 
-        writing her next novel (editing her novel) 
-        @ double studio:double studio:common room:sofa
-    """
-    # Updating persona's scratch memory with <curr_tile>. 
-    self.scratch.curr_tile = curr_tile
-
-    # We figure out whether the persona started a new day, and if it is a new
-    # day, whether it is the very first day of the simulation. This is 
-    # important because we set up the persona's long term plan at the start of
-    # a new day. 
-    new_day = False
-    if not self.scratch.curr_time: 
-      new_day = "First day"
-    elif (self.scratch.curr_time.strftime('%A %B %d')
-          != curr_time.strftime('%A %B %d')):
-      new_day = "New day"
-    self.scratch.curr_time = curr_time
-
-    # Main cognitive sequence begins here. 
-    perceived = self.perceive(maze)
-    retrieved = self.retrieve(perceived)
-    plan = self.plan(maze, personas, new_day, retrieved)
-    self.reflect()
-
-    # <execution> is a triple set that contains the following components: 
-    # <next_tile> is a x,y coordinate. e.g., (58, 9)
-    # <pronunciatio> is an emoji. e.g., "\ud83d\udca4"
-    # <description> is a string description of the movement. e.g., 
-    #   writing her next novel (editing her novel) 
-    #   @ double studio:double studio:common room:sofa
-    return self.execute(maze, personas, plan)
-
-
-  def open_convo_session(self, convo_mode): 
-    open_convo_session(self, convo_mode)
-
+    missing = [k for k, v in checks.items() if v is False]
+    failed = len(missing) > 0
     
-
+    if failed:
+      raise MissingAgentRequirements(missing)
     
+    assert self.recall is not None
+    assert self.config is not None
+    assert self.plan_contract is not None
+    assert self.plan_instructions is not None
+    assert self.plan_main_schema is not None
+    assert self.plan_aux_schemas is not None
+    #assert self.thought_contract is not None   TODO
+    #assert self.thought_gen_ruleset is not None  TODO
+    #assert self.thought_gen_schema is not None TODO
+    
+    return Agent(
+      self.goal,
+      self.blackboard,
+      self.recall,
+      self.config,
+      self.plan_contract,
+      self.plan_instructions,
+      self.plan_main_schema,
+      self.plan_aux_schemas,
+      Contract(state_keys=[], memory_keys=[]), [], {}, {} #TODO
+      #self.thought_contract,
+      #self.thought_gen_ruleset,
+      #self.thought_gen_schema
+    )
