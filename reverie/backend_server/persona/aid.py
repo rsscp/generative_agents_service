@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Dict, Literal
+from typing import Dict, Literal, Any
 
 
 class Contract(BaseModel):
@@ -13,9 +13,26 @@ class ActionParam(BaseModel):
     restrictions: list[str]
 
 
-class Action(BaseModel):
+class Property(BaseModel):
+    type: Literal["string", "integer", "float", "boolean"]
     description: str
-    parameters: Dict[str, ActionParam]
+
+
+class Parameters(BaseModel):
+    type: Literal["object"]
+    required: list[str]
+    properties: Dict[str, Property]
+
+
+class Function(BaseModel):
+    name: str
+    description: str
+    parameters: Parameters
+
+
+class Action(BaseModel):
+    type: Literal["function"]
+    function: Function
 
 
 class Configuration(BaseModel): #TODO complete
@@ -27,4 +44,15 @@ class SchemaField(BaseModel):
     description: str
     guidelines: str
     field_type: Literal["string", "integer", "float", "boolean", "object", "list"]
-    sub_fields: dict[str, "SchemaField"] = Field(default_factory=dict)
+    sub_fields: Dict[str, "SchemaField"] = Field(default_factory=dict[str, "SchemaField"])
+
+
+class ActionCall(BaseModel):
+    key: str
+    arguments: Dict[str, Any] #TODO specific type instead of Any if possible
+
+
+class PlanStep(BaseModel):
+    task: Dict
+    actions: list[ActionCall] = Field(default_factory=list[ActionCall])
+    

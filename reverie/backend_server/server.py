@@ -4,17 +4,16 @@ from global_methods import *
 from persona.aid import Configuration
 from utils import *
 from maze import *
-from persona.persona import *
 
 from fastapi import FastAPI
 
-from api_classes import CreateAgentRequest, CreateAgentResponse, CreateSimRequest, CreateSimResponse, PlanRequest, PlanResponse, SetAgentContractsRequest, SetAgentPlanReqRequest
+from api_classes import *
 from simulation import Simulation
 from persona.agent import AgentSetup, MissingAgentRequirements
 
 from typing import Dict
-from llm_operations import plan
-from persona.aid import Action
+from persona.cognitive_modules.plan_alt import plan_broad, plan_grounded
+from persona.aid import Action, PlanStep, ActionCall
 
 
 app = FastAPI()
@@ -48,7 +47,7 @@ def set_agent_memory(agent_id: str, request: Dict[str, list]):
 
 
 @app.post("/simulation/agents/{agent_id}/actions", response_model=str)
-def set_agent_actions(agent_id: str, request: Dict[str, Action]):
+def set_agent_actions(agent_id: str, request: list[Action]):
     sim.agents_setup[agent_id].set_actions(request)
     return "ok"
 
@@ -61,12 +60,19 @@ def set_agent_contracts(agent_id: str, request: SetAgentContractsRequest):
     return "ok"
 
 
-@app.post("/simulation/agents/{agent_id}/planning", response_model=str)
+@app.post("/simulation/agents/{agent_id}/planning_config", response_model=str)
 def set_agent_planning_req(agent_id: str, request: SetAgentPlanReqRequest):
     sim.agents_setup[agent_id].set_plan_req(
         request.instructions,
-        request.plan_main_schema,
         request.plan_aux_schemas
+    )
+    return "ok"
+
+
+@app.post("/simulation/agents/{agent_id}/grounded_planning_config", response_model=str)
+def set_agent_grounded_planning_req(agent_id: str, request: SetAgentPlanGroundedReqRequest):
+    sim.agents_setup[agent_id].set_plan_grounded_req(
+        request.instructions,
     )
     return "ok"
 
@@ -81,5 +87,23 @@ def finilaze_agent(agent_id: str):
 
 
 @app.post("/simulation/agents/{agent_id}/plan", response_model=str)
-def advance_sim(agent_id: str):
-    return plan(sim.get_agent(agent_id))
+def plan(agent_id: str):
+    plan_broad(sim.get_agent(agent_id))
+    return "ok"
+
+
+@app.post("/simulation/agents/{agent_id}/plan_grounded", response_model=str)
+def plan_ground(agent_id: str):
+    plan_grounded(sim.get_agent(agent_id))
+    return "ok"
+
+
+
+
+
+
+
+
+@app.get("/simulation/agents/{agent_id}/plan", response_model=list[PlanStep])
+def get_plan(agent_id: str):
+    return sim.get_agent(agent_id).blackboard.curr_plan

@@ -11,7 +11,7 @@ sys.path.append('../../')
 
 from global_methods import *
 from typing import Dict, Any
-from persona.aid import Action
+from persona.aid import Action, PlanStep
 
 class Blackboard: 
   
@@ -24,7 +24,7 @@ class Blackboard:
     self.att_bandwidth = 3
     self.retention = 5
     self.state = initial_state
-    self.available_actions: Dict[str, Action] = {}
+    self.available_actions: list[Action] = []
     self.cache_lists: Dict[str, list] = {}
     self.perception = []
 
@@ -39,11 +39,11 @@ class Blackboard:
     self.thought_count = 5
 
     # Planning
-    self.curr_plan = []
+    self.curr_plan: list[PlanStep] = []
     self.curr_action = None
 
 
-  def set_actions(self, actions: Dict[str, Action]):
+  def set_actions(self, actions: list[Action]):
     self.available_actions = actions
 
 

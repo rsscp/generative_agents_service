@@ -1,11 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
-from persona.aid import SchemaField
-
-
-class Contract(BaseModel):
-    state_keys: list[str]
-    memory_keys: list[str]
+from persona.aid import SchemaField, Contract
 
 
 class SchemaSet(BaseModel):
@@ -59,8 +54,11 @@ class SetAgentContractsRequest(BaseModel):
 
 class SetAgentPlanReqRequest(BaseModel):
     instructions: list[str]
-    plan_main_schema: Dict[str, SchemaField]
     plan_aux_schemas: Dict[str, Dict[str, SchemaField]] = Field(default_factory=dict)
+
+
+class SetAgentPlanGroundedReqRequest(BaseModel):
+    instructions: list[str]
 
 
 

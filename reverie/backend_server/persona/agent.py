@@ -33,13 +33,39 @@ from typing import Dict, Any
 from persona.memory_structures.blackboard import Blackboard
 from persona.memory_structures.recall import Recall
 from api_classes import Contract, MemoryList
-from persona.aid import Action, Configuration, SchemaField
+from persona.aid import Action, Configuration, SchemaField, Function, Parameters
+
 
 STANDARD_INSTRUCTIONS = [
-  "Do not make up facts",
-  "All information used on planning, apart from what is considered common sense, will be pulled from this message."
   "You response will follow the JSON structure specified in Schema.",
-  "Always complying with JSON formating."
+  "Always comply with JSON formating.",
+  "Any text should be written in English",
+  "Reduce thinking to at most two cycles of reflection"
+]
+
+STANDARD_PLANNING_INSTRUCTIONS = [
+  "Do not make up facts",
+  "All information used on planning will be pulled from this message."
+]
+
+STANDARD_GROUNDED_PLANNING_INSTRUCTIONS = [
+  "Do not make up values when filling tool call arguments.",
+  "All values used on tool call arguments will be pulled from this message.",
+]
+
+DEFAULT_ACTIONS = [
+  Action(
+      type = "function",
+      function = Function(
+        name = "completed_task",
+        description = "This action is used to end a sequence of actions that already acomplish the described task",
+        parameters = Parameters(
+          type = "object",
+          required = [],
+          properties = {}
+        )
+      )
+    )
 ]
 
 
@@ -63,8 +89,8 @@ class Agent:
     config: Configuration,
     plan_contract: Contract,
     plan_instructions: list[str],
-    plan_main_schema: Dict[str, SchemaField],
     plan_aux_schemas: Dict[str, Dict[str, SchemaField]],
+    plan_grounded_instructions: list[str],
     thought_contract: Contract,
     thought_instructions: list[str],
     thought_main_schema: Dict[str, SchemaField],
@@ -74,14 +100,41 @@ class Agent:
     self.blackboard = blackboard
     self.recall = recall
     self.config = config
+
+    '''
+    self.free_plan_detail
+    self.broad_plan_detail
+    self.grounded_plan_detail
+    self.perceive_detail
+    self.thought_detail
+    self.interaction_detail
+    '''
+
     self.plan_contract = plan_contract
-    self.plan_instructions = STANDARD_INSTRUCTIONS + plan_instructions
-    self.plan_main_schema = plan_main_schema
+    self.plan_instructions = plan_instructions
     self.plan_aux_schemas = plan_aux_schemas
+
+    self.plan_grounded_instructions = plan_grounded_instructions
+    
     self.thought_contract = thought_contract
-    self.thought_instructions = STANDARD_INSTRUCTIONS + thought_instructions
+    self.thought_instructions = thought_instructions
     self.thought_main_schema = thought_main_schema
     self.thought_aux_schemas = thought_aux_schemas
+
+    self.plan_main_schema: Dict[str, SchemaField] = {
+      "plan_steps": SchemaField(
+        description = "List of sequencial steps that make up the plan.",
+        guidelines = "Should have at most 5 items. Each item follows the Step Schema.",
+        field_type = "list"
+      )
+    }
+    self.plan_grounded_main_schema: Dict[str, SchemaField] = {
+      "sequencial_actions": SchemaField(
+        description = "List of sequencial tool calls that aim to complete the task",
+        guidelines = "Should have as many tool calls as necessary to complete task",
+        field_type = "list"
+      )
+    }
 
 
 # Temporary agent setup class with all optional fields
@@ -100,8 +153,8 @@ class AgentSetup:
     self.config = None
     self.plan_contract = None
     self.plan_instructions = None
-    self.plan_main_schema = None
     self.plan_aux_schemas = None
+    self.plan_grounded_instructions = None
     self.thought_contract = None
     self.thought_instructions = None
     self.thought_main_schema = None
@@ -116,8 +169,9 @@ class AgentSetup:
     self.recall = Recall(memory_lists)
 
 
-  def set_actions(self, actions: Dict[str, Action]):
+  def set_actions(self, actions: list[Action]):
     self.blackboard.set_actions(actions)
+    self.blackboard.available_actions += DEFAULT_ACTIONS
 
 
   # --- Planning requirements ---
@@ -128,12 +182,28 @@ class AgentSetup:
   def set_plan_req(
     self,
     instructions: list[str],
-    main_schema: Dict[str, SchemaField],
     aux_schemas: Dict[str, Dict[str, SchemaField]]
   ):
-    self.plan_instructions = instructions
-    self.plan_main_schema = main_schema
+    self.plan_instructions = \
+      instructions \
+      + STANDARD_INSTRUCTIONS \
+      + STANDARD_PLANNING_INSTRUCTIONS
     self.plan_aux_schemas = aux_schemas
+
+
+  # --- Planning Grounded requirements ---
+
+  def set_plan_grounded_contract(self, contract: Contract):
+    self.plan_contract = contract
+  
+  def set_plan_grounded_req(
+    self,
+    instructions: list[str],
+  ):
+    self.plan_grounded_instructions = \
+      instructions \
+      + STANDARD_INSTRUCTIONS \
+      + STANDARD_GROUNDED_PLANNING_INSTRUCTIONS
 
 
   # --- Reflection requirements ---
@@ -161,10 +231,9 @@ class AgentSetup:
       "memory": self.recall != None,
       "configuration": self.config != None,
       "contracts": self.plan_contract != None and self.thought_contract != None,
-      "planning requirements": self.plan_instructions != None and self.plan_main_schema != None and self.plan_aux_schemas != None
+      "planning requirements": self.plan_instructions != None and self.plan_aux_schemas != None,
+      "planning grounded requirements": self.plan_grounded_instructions != None
     }
-    
-    print(f"{self.plan_instructions}, {self.plan_main_schema}")
 
     missing = [k for k, v in checks.items() if v is False]
     failed = len(missing) > 0
@@ -176,8 +245,8 @@ class AgentSetup:
     assert self.config is not None
     assert self.plan_contract is not None
     assert self.plan_instructions is not None
-    assert self.plan_main_schema is not None
     assert self.plan_aux_schemas is not None
+    assert self.plan_grounded_instructions is not None
     #assert self.thought_contract is not None   TODO
     #assert self.thought_gen_ruleset is not None  TODO
     #assert self.thought_gen_schema is not None TODO
@@ -189,8 +258,8 @@ class AgentSetup:
       self.config,
       self.plan_contract,
       self.plan_instructions,
-      self.plan_main_schema,
       self.plan_aux_schemas,
+      self.plan_grounded_instructions,
       Contract(state_keys=[], memory_keys=[]), [], {}, {} #TODO
       #self.thought_contract,
       #self.thought_gen_ruleset,
