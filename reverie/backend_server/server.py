@@ -15,7 +15,7 @@ from persona.agent import AgentSetup, MissingAgentRequirements, RepeatedSchemaNa
 
 from typing import Dict
 from reverie.backend_server.persona.cognitive_modules.plan_ops import op_plan_full, op_plan, op_ground
-from persona.aid import Tool, PlanStep, ActionCall
+from persona.aid import Tool, PlanStep, ToolCall
 
 
 app = FastAPI()
@@ -134,19 +134,10 @@ def feed_event_request(agent_id: str, request: FeedEventRequest):
     return "ok"
 
 
-@app.post("/simulation/agents/{agent_id}/next_action", response_model=ActionCall)
+@app.post("/simulation/agents/{agent_id}/next_action", response_model=ToolCall)
 def next_action(agent_id: str):
     agent = sim.get_agent(agent_id)
-    action = agent.advance_index()
-    if action is None:
-        raise HTTPException(status_code=404, detail="No next action available")
-    return action
-
-
-@app.get("/simulation/agents/{agent_id}/next_action", response_model=ActionCall)
-def get_current_action(agent_id: str):
-    agent = sim.get_agent(agent_id)
-    action = agent.get_next_action()
+    action = agent.plan.next_action()
     if action is None:
         raise HTTPException(status_code=404, detail="No next action available")
     return action
@@ -171,7 +162,7 @@ def get_plan(agent_id: str):
     return sim.get_agent(agent_id).blackboard.curr_plan
 
 
-@app.get("/simulation/agents/{agent_id}/plan/actions", response_model=list[ActionCall])
+@app.get("/simulation/agents/{agent_id}/plan/actions", response_model=list[ToolCall])
 def get_actions(agent_id: str):
     for step in reversed(sim.get_agent(agent_id).blackboard.curr_plan):
         if step.actions and step.actions[-1].key == "completed_task":

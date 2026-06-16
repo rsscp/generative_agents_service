@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from persona.agent import Agent
 from llm_operations import gen_plan, gen_grounding
-from persona.aid import PlanStep, Contract, ActionCall
+from persona.aid import PlanStep, Contract, ToolCall
 from typing import Dict
 from reverie.backend_server.persona.agent import ModuleSettings
 

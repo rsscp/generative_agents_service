@@ -1,6 +1,6 @@
 from numpy.typing import NDArray
 
-from persona.aid import Schema, Tool, Property, SchemaField, ActionCall
+from persona.aid import Schema, Tool, Property, SchemaField, ToolCall
 from persona.memory_structures.memory_blocks.node import CoreNode, EmbeddingArray, Node, RawNode
 from standard import FOCAL_POINT_SCHEMA, FOCAL_POINT_AUX_SCHEMAS, NODE_REQ_SCHEMA, STANDARD_INSTRUCTIONS
 from persona.agent import Agent
@@ -43,7 +43,7 @@ def gen_grounding(
     relevant_state: Dict[str, Any],
     relevant_memory: list,
     plan_task: Dict[str, Any],
-    actions_taken: list[ActionCall]
+    actions_taken: list[ToolCall]
 ):
     system_prompt, user_prompt = create_standard_prompt(
         state = relevant_state,
@@ -166,8 +166,8 @@ def clean_up_plan(response_string: str) -> Dict:
     return json.loads(clean_string)
 
 
-def clean_up_ground(actions_response: list) -> list[ActionCall]:
-    actions = [ActionCall(
+def clean_up_ground(actions_response: list) -> list[ToolCall]:
+    actions = [ToolCall(
         key = call["function"]["name"],
         arguments = call["function"]["arguments"])
     for call in actions_response]
@@ -205,7 +205,7 @@ def create_standard_prompt(
     state: Optional[Dict[str, Dict]] = None,
     memory: Optional[list] = None,
     plan_task: Optional[Dict] = None,
-    actions_taken: Optional[list[ActionCall]] = None,
+    actions_taken: Optional[list[ToolCall]] = None,
 ):
     system_prompt = ""
     user_prompt = ""
@@ -385,7 +385,7 @@ def create_core_nodes_sec(core_nodes: list[Node]) -> str:
 def create_task_sec(
     task: str,
     plan_task: Optional[Dict] = None,
-    actions_taken: Optional[list[ActionCall]] = None
+    actions_taken: Optional[list[ToolCall]] = None
 ) -> str:
     result = "# Task\n"
     

@@ -15,7 +15,7 @@ import random
 
 from pydantic import BaseModel, Field
 from reverie.backend_server.persona.memory_structures.memory_blocks.node import CoreNode, Node, RawNode
-from reverie.backend_server.standard import DEFAULT_ACTIONS, PLAN_SCHEMA, PLAN_AUX_SCHEMAS, GROUND_SCHEMA, STANDARD_GROUNDING_INSTRUCTIONS, STANDARD_INSTRUCTIONS, STANDARD_PLANNING_INSTRUCTIONS
+from reverie.backend_server.standard import BLOCKING_ACTIONS, DEFAULT_ACTIONS, PLAN_SCHEMA, PLAN_AUX_SCHEMAS, GROUND_SCHEMA, STANDARD_GROUNDING_INSTRUCTIONS, STANDARD_INSTRUCTIONS, STANDARD_PLANNING_INSTRUCTIONS
 
 sys.path.append('../')
 
@@ -39,7 +39,7 @@ from persona.memory_structures.blackboard import Blackboard
 from persona.memory_structures.recall import Recall
 from api_classes import Contract, SchemaField
 from reverie.backend_server.persona.memory_structures.memory_blocks.memory_box import MemoryBox
-from persona.aid import GroundingSettings, InteractionSettings, PlanStep, PlanningSettings, ReflectionSettings, Schema, Tool, Configuration, SchemaField
+from persona.aid import GroundingSettings, InteractionSettings, PlanStep, PlanningSettings, ReflectionSettings, Schema, Tool, Configuration, SchemaField, ToolCall
 
 
 class AgentException(Exception):
@@ -104,30 +104,42 @@ class Plan:
         self.reset_index()
         self.steps = []
     
-    def get_next_action(self):
-      if self.task_index > -1 and self.action_index > -1:
-        action = self \
-          .steps[self.task_index] \
-          .actions[self.action_index]
-        self.advance_index()
-        return action
-      else:
-        return None
 
-    def advance_index(self):
+    def advance_index(self) -> bool:
       with self.lock: 
-        step_index = self.index[0] + 1
-        action_index = self.index[1] + 1
-
+        step_index = self.task_index + 1
+        action_index = self.action_index + 1
         step_limit = len(self.steps)
         action_limit = len(self.steps[step_index].actions)
 
         if action_index == action_limit:
           action_index = 0
         if step_index == step_limit:
-          step_index = 0
+          self.reset_index()
+          return False
 
-        self.index = [step_index, action_index]
+        self.task_index = step_index
+        self.action_index = action_index
+
+        return True
+
+
+    def next_action(self) -> Optional[ToolCall]:
+      action = None
+      no_reset = True
+      can_continue = lambda: \
+        self.task_index > -1 and \
+        self.action_index > -1 and \
+        action is not None and \
+        action not in BLOCKING_ACTIONS and \
+        action.key == "completed task" and \
+        no_reset
+
+      while can_continue():
+        action = self \
+          .steps[self.task_index] \
+          .actions[self.action_index]
+        no_reset = self.advance_index()
 
 
 class ModuleSettings(BaseModel):

@@ -50,14 +50,16 @@ class SchemaField(BaseModel):
 Schema = Dict[str, SchemaField]
 
 
-class ActionCall(BaseModel):
+class ToolCall(BaseModel):
     key: str
     arguments: Dict[str, Any] #TODO specific type instead of Any if possible
 
 
 class PlanStep(BaseModel):
     task: Dict
-    actions: list[ActionCall] = Field(default_factory=list[ActionCall])
+    actions: list[ToolCall] = Field(default_factory=list[ToolCall])
+    locked: bool = False
+    complete: bool = False
 
 
 class SimpleSettings(BaseModel):
