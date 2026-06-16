@@ -7,11 +7,22 @@ Description: Defines the short-term memory module for generative agents.
 import datetime
 import json
 import sys
+
+from reverie.backend_server.persona.memory_structures.memory_blocks.memory_box import MemoryBox
 sys.path.append('../../')
 
 from global_methods import *
 from typing import Dict, Any
-from persona.aid import Action, PlanStep
+from threading import Lock
+from persona.aid import MemoryLists, Tool, PlanStep
+
+class ReflectionConfig:
+    recency_weight = 1
+    relevance_weight = 1
+    importance_weight = 1
+    recency_decay = 0.99
+    importance_threshold = 150
+    thought_count = 5
 
 class Blackboard: 
   
@@ -19,16 +30,20 @@ class Blackboard:
     self,
     initial_state: Dict[str, Any],
   ): 
-
+    # Concurrence
+    self.lock = Lock()
+    
     # Memory
     self.att_bandwidth = 3
     self.retention = 5
     self.state = initial_state
-    self.available_actions: list[Action] = []
-    self.cache_lists: Dict[str, list] = {}
-    self.perception = []
+    self.tools: list[Tool] = []
 
     # Reflection
+    self.reflection_config = ReflectionConfig()
+    self.importance_accumulator = 0.0
+    self.events_since_reflection = 0
+    '''
     self.recency_w = 1
     self.relevance_w = 1
     self.importance_w = 1
@@ -37,14 +52,16 @@ class Blackboard:
     self.importance_trigger_curr = self.importance_trigger_max
     self.importance_ele_n = 0 
     self.thought_count = 5
+    '''
 
     # Planning
     self.curr_plan: list[PlanStep] = []
     self.curr_action = None
 
 
-  def set_actions(self, actions: list[Action]):
-    self.available_actions = actions
+  def set_tools(self, actions: list[Tool]):
+    with self.lock:
+      self.tools = actions
 
 
   def get_f_daily_schedule_index(self, advance=0):

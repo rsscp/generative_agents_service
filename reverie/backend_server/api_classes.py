@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
-from persona.aid import SchemaField, Contract
+from persona.aid import Schema, SchemaField, Contract
+from reverie.backend_server.persona.memory_structures.memory_blocks.node import CoreNode
 
 
 class SchemaSet(BaseModel):
@@ -46,22 +47,39 @@ class CreateAgentResponse(BaseModel):
     errors: list[str] = []
 
 
-class SetAgentContractsRequest(BaseModel):
-    plan_contract: Contract
-    thought_contract: Contract
-    interactions_contracts: list = [] #TODO Worry about interactions later
-
-
-class SetAgentPlanReqRequest(BaseModel):
+class PlanningSetupRequest(BaseModel):
     instructions: list[str]
-    plan_aux_schemas: Dict[str, Dict[str, SchemaField]] = Field(default_factory=dict)
+    contract: Contract
+    aux_schemas: Dict[str, Schema]
 
 
-class SetAgentPlanGroundedReqRequest(BaseModel):
+class GroundingSetupRequest(BaseModel):
     instructions: list[str]
+    contract: Contract
 
 
+class ReflectionSetupRequest(BaseModel):
+    instructions: list[str]
+    contract: Contract
+    main_schema: Schema
+    aux_schemas: Dict[str, Schema]
 
+
+class InteractionSetupRequest(BaseModel):
+    instructions: list[str]
+    contract: Contract
+    main_schema: Schema
+    aux_schemas: Dict[str, Schema]
+
+
+class FeedEventRequest(BaseModel):
+    event: Dict[str, Any]
+    weight: float = 1.0
+
+
+class SetMemoryRequest(BaseModel):
+    core_nodes: list[CoreNode]
+    node_sections: Dict[str, list[CoreNode]]
 
 
 

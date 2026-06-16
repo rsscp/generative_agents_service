@@ -13,6 +13,10 @@ import sys
 import datetime
 import random
 
+from pydantic import BaseModel, Field
+from reverie.backend_server.persona.memory_structures.memory_blocks.node import CoreNode, Node, RawNode
+from reverie.backend_server.standard import DEFAULT_ACTIONS, PLAN_SCHEMA, PLAN_AUX_SCHEMAS, GROUND_SCHEMA, STANDARD_GROUNDING_INSTRUCTIONS, STANDARD_INSTRUCTIONS, STANDARD_PLANNING_INSTRUCTIONS
+
 sys.path.append('../')
 
 from global_methods import *
@@ -28,55 +32,116 @@ from persona.cognitive_modules.reflect import *
 from persona.cognitive_modules.execute import *
 from persona.cognitive_modules.converse import *
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from threading import Lock
 
 from persona.memory_structures.blackboard import Blackboard
 from persona.memory_structures.recall import Recall
-from api_classes import Contract, MemoryList
-from persona.aid import Action, Configuration, SchemaField, Function, Parameters
+from api_classes import Contract, SchemaField
+from reverie.backend_server.persona.memory_structures.memory_blocks.memory_box import MemoryBox
+from persona.aid import GroundingSettings, InteractionSettings, PlanStep, PlanningSettings, ReflectionSettings, Schema, Tool, Configuration, SchemaField
 
 
-STANDARD_INSTRUCTIONS = [
-  "You response will follow the JSON structure specified in Schema.",
-  "Always comply with JSON formating.",
-  "Any text should be written in English",
-  "Reduce thinking to at most two cycles of reflection"
-]
+class AgentException(Exception):
+  def __init__(self, message: str, reason: str):
+    self.reason = reason
+    super().__init__(message)
 
-STANDARD_PLANNING_INSTRUCTIONS = [
-  "Do not make up facts",
-  "All information used on planning will be pulled from this message."
-]
 
-STANDARD_GROUNDED_PLANNING_INSTRUCTIONS = [
-  "Do not make up values when filling tool call arguments.",
-  "All values used on tool call arguments will be pulled from this message.",
-]
-
-DEFAULT_ACTIONS = [
-  Action(
-      type = "function",
-      function = Function(
-        name = "completed_task",
-        description = "This action is used to end a sequence of actions that already acomplish the described task",
-        parameters = Parameters(
-          type = "object",
-          required = [],
-          properties = {}
-        )
-      )
+class MissingAgentRequirements(AgentException):
+  def __init__(self, missing_requirements: list[str]):
+    self.missing_requirements = missing_requirements
+    self.message = (
+      "Agent is missing required configuration: "
+      + ", ".join(missing_requirements)
     )
-]
+    super().__init__(
+      self.message,
+      "Missing requirements to finalize agent"
+    )
 
 
-class MissingAgentRequirements(Exception):
-    def __init__(self, missing_requirements: list[str]):
-        self.missing_requirements = missing_requirements
-        message = (
-            "Agent is missing required configuration: "
-            + ", ".join(missing_requirements)
-        )
-        super().__init__(message)
+class RepeatedSchemaNames(AgentException):
+  def __init__(self, repeated_names: set[str]):
+    self.repeated_names = repeated_names
+    self.message = (
+      "The following schemas are already internally defined and their names must not be used:"
+      + ", ".join(repeated_names)
+    )
+    super().__init__(
+      self.message,
+      "Provided schemas named after predefined system schemas"
+    )
+
+
+class Plan:
+    lock: Lock = Lock()
+
+    steps: list[PlanStep] = Field(default_factory=list[PlanStep])
+    task_index: int = -1
+    action_index: int = -1
+
+    def reset_index(self):
+      with self.lock:
+        self.task_index = -1
+        self.action_index = -1
+
+    def unplanned(self):
+      return self.task_index == -1
+
+    def ungrounded(self):
+      return self.action_index == -1
+
+    def open_plan(self):
+      self.task_index = 0
+      self.action_index = -1
+
+    def open_ground(self):
+      self.action_index = 0
+
+    def clear_plan(self):
+      with self.lock:
+        self.reset_index()
+        self.steps = []
+    
+    def get_next_action(self):
+      if self.task_index > -1 and self.action_index > -1:
+        action = self \
+          .steps[self.task_index] \
+          .actions[self.action_index]
+        self.advance_index()
+        return action
+      else:
+        return None
+
+    def advance_index(self):
+      with self.lock: 
+        step_index = self.index[0] + 1
+        action_index = self.index[1] + 1
+
+        step_limit = len(self.steps)
+        action_limit = len(self.steps[step_index].actions)
+
+        if action_index == action_limit:
+          action_index = 0
+        if step_index == step_limit:
+          step_index = 0
+
+        self.index = [step_index, action_index]
+
+
+class ModuleSettings(BaseModel):
+  contract: Optional[Contract] = None
+  instructions: Optional[list[str]] = None
+  main_schema: Optional[Dict[str, SchemaField]] = None
+  aux_schemas: Optional[Dict[str, Dict[str, SchemaField]]] = None
+
+
+class AgentSettings(BaseModel):
+  planning: PlanningSettings
+  grounding: GroundingSettings
+  reflection: ReflectionSettings
+  interaction: InteractionSettings
 
 
 class Agent:
@@ -86,143 +151,165 @@ class Agent:
     goal: str,
     blackboard: Blackboard,
     recall: Recall,
-    config: Configuration,
-    plan_contract: Contract,
-    plan_instructions: list[str],
-    plan_aux_schemas: Dict[str, Dict[str, SchemaField]],
-    plan_grounded_instructions: list[str],
-    thought_contract: Contract,
-    thought_instructions: list[str],
-    thought_main_schema: Dict[str, SchemaField],
-    thought_aux_schemas: Dict[str, Dict[str, SchemaField]]
+    settings: AgentSettings
   ):
+    self.lock = Lock()
+
     self.goal = goal
+    self.settings = settings
     self.blackboard = blackboard
     self.recall = recall
-    self.config = config
+    self.plan = Plan()
 
-    '''
-    self.free_plan_detail
-    self.broad_plan_detail
-    self.grounded_plan_detail
-    self.perceive_detail
-    self.thought_detail
-    self.interaction_detail
-    '''
+    pas_common_keys = \
+      set(settings.planning.aux_schemas.keys()) & \
+      set(PLAN_AUX_SCHEMAS.keys())
 
-    self.plan_contract = plan_contract
-    self.plan_instructions = plan_instructions
-    self.plan_aux_schemas = plan_aux_schemas
+    if pas_common_keys:
+      raise RepeatedSchemaNames(pas_common_keys)
+    else:
+      self.settings.planning.aux_schemas = PLAN_AUX_SCHEMAS | settings.planning.aux_schemas
 
-    self.plan_grounded_instructions = plan_grounded_instructions
+
+  '''
+  def merge_nodes(self, cache: Dict[str, Dict[str, Node]], memory: Dict[str, Dict[str, Node]]) -> list[Node]:
+    cache_condensed: Dict[str, Node] = {embed: node for nodes in cache.values() for embed, node in nodes.items()}
+    memory_condensed: Dict[str, Node] = {embed: node for nodes in memory.values() for embed, node in nodes.items()}
+
+    embed_diff = set(memory_condensed.keys()).difference(cache_condensed.keys())
+    result: list[Node] = [memory_condensed[embed] for embed in embed_diff]
+    result.extend(cache_condensed.values())
+    return result
+
+
+  def get_relevant_pieces(self, contract: Contract) -> tuple[Dict[str, Any], list[Node]]:
+    common_keys_state = set(contract.state_keys) & set(self.blackboard.state.keys())
+    common_keys_cache = set(contract.memory_keys) & set(self.blackboard.cache.section_keys())
+    common_keys_memory = set(contract.memory_keys) & set(self.recall.memory.section_keys())
     
-    self.thought_contract = thought_contract
-    self.thought_instructions = thought_instructions
-    self.thought_main_schema = thought_main_schema
-    self.thought_aux_schemas = thought_aux_schemas
+    relevant_state = {k: self.blackboard.state[k] for k in common_keys_state}
+    relevant_cache: Dict[str, Dict[str, Node]] = {k: self.blackboard.cache.sections[k] for k in common_keys_cache}
+    relevant_memory: Dict[str, Dict[str, Node]] = {k: self.recall.memory.sections[k] for k in common_keys_memory}
 
-    self.plan_main_schema: Dict[str, SchemaField] = {
-      "plan_steps": SchemaField(
-        description = "List of sequencial steps that make up the plan.",
-        guidelines = "Should have at most 5 items. Each item follows the Step Schema.",
-        field_type = "list"
-      )
-    }
-    self.plan_grounded_main_schema: Dict[str, SchemaField] = {
-      "sequencial_actions": SchemaField(
-        description = "List of sequencial tool calls that aim to complete the task",
-        guidelines = "Should have as many tool calls as necessary to complete task",
-        field_type = "list"
-      )
-    }
+    relevant_entities: set[str] = set()
+    for section in relevant_cache.values():
+      for node in section.values():
+        relevant_entities.update(node.entities_involved)
+
+    relevant_memory_sections = self.relevance_filter(relevant_entities, relevant_memory)
+    relevant_nodes = self.merge_nodes(relevant_cache, relevant_memory_sections)
+
+    return relevant_state, relevant_nodes
+
+
+  def relevance_filter(self, keys: set[str], memory: Dict[str, Dict[str, Node]]) -> Dict[str, Dict[str, Node]]:
+    result: Dict[str, Dict[str, Node]] = {k: {} for k in memory.keys()}
+    
+    for sec_name, section in memory.items():
+      for embed, node in section.items():
+        if bool(set(node.entities_involved) & keys):
+          result[sec_name][embed] = node
+
+    return result
+  '''
 
 
 # Temporary agent setup class with all optional fields
 # When all requirements are filled, the final agent can be created
 class AgentSetup:
-  
+
   def __init__(
     self,
     goal: str,
     initial_state: Dict[str, Any],
   ):
+    self.lock = Lock()
+
     self.goal = goal
     self.blackboard = Blackboard(initial_state)
-
-    self.recall = None
-    self.config = None
-    self.plan_contract = None
-    self.plan_instructions = None
-    self.plan_aux_schemas = None
-    self.plan_grounded_instructions = None
-    self.thought_contract = None
-    self.thought_instructions = None
-    self.thought_main_schema = None
-    self.thought_aux_schemas = None
+    self.recall: Optional[Recall] = None
+    self.config: Optional[Configuration] = None
+    self.plan_settings: Optional[PlanningSettings] = None
+    self.ground_settings: Optional[GroundingSettings] = None
+    self.reflect_settings: Optional[ReflectionSettings] = None
+    self.interact_settings: Optional[InteractionSettings] = None
 
 
   def set_config(self, config: Configuration):
-    self.config = config
+    with self.lock:
+      self.config = config
 
 
-  def set_memory_lists(self, memory_lists: Dict[str, list]):
-    self.recall = Recall(memory_lists)
+  def set_memory(self, core_nodes: list[CoreNode], node_sections: Dict[str, list[CoreNode]]):
+    with self.lock:
+      box = MemoryBox(node_sections)
+      self.recall = Recall(core_nodes, box) #TODO do it right...
 
 
-  def set_actions(self, actions: list[Action]):
-    self.blackboard.set_actions(actions)
-    self.blackboard.available_actions += DEFAULT_ACTIONS
+  def set_actions(self, actions: list[Tool]):
+    with self.lock:
+      self.blackboard.set_tools(actions)
+      self.blackboard.tools += DEFAULT_ACTIONS
 
 
   # --- Planning requirements ---
-
-  def set_plan_contract(self, contract: Contract):
-    self.plan_contract = contract
   
-  def set_plan_req(
-    self,
+  def setup_planning(self,
     instructions: list[str],
-    aux_schemas: Dict[str, Dict[str, SchemaField]]
+    contract: Contract,
+    aux_schemas: Dict[str, Schema]
   ):
-    self.plan_instructions = \
-      instructions \
-      + STANDARD_INSTRUCTIONS \
-      + STANDARD_PLANNING_INSTRUCTIONS
-    self.plan_aux_schemas = aux_schemas
+    with self.lock:
+      self.plan_settings = PlanningSettings(
+        instructions =
+          instructions \
+          + STANDARD_INSTRUCTIONS \
+          + STANDARD_PLANNING_INSTRUCTIONS,
+        contract = contract,
+        main_schema = PLAN_SCHEMA,
+        aux_schemas = aux_schemas
+      )
 
 
   # --- Planning Grounded requirements ---
 
-  def set_plan_grounded_contract(self, contract: Contract):
-    self.plan_contract = contract
-  
-  def set_plan_grounded_req(
-    self,
+  def setup_grounding(self,
     instructions: list[str],
+    contract: Contract
   ):
-    self.plan_grounded_instructions = \
-      instructions \
-      + STANDARD_INSTRUCTIONS \
-      + STANDARD_GROUNDED_PLANNING_INSTRUCTIONS
+    with self.lock:
+      self.ground_settings = GroundingSettings(
+        instructions =
+          instructions \
+          + STANDARD_INSTRUCTIONS \
+          + STANDARD_GROUNDING_INSTRUCTIONS,
+        contract = contract,
+        main_schema = GROUND_SCHEMA
+      )
 
 
   # --- Reflection requirements ---
 
-  def set_thought_contract(self, contract: Contract):
-    self.thought_contract = contract
-
-  def set_thought_req(
-    self,
+  def setup_reflection(self,
     instructions: list[str],
-    schema: Dict[str, SchemaField],
-    aux_schemas: list[Dict[str, SchemaField]]
+    main_schema: Schema,
+    aux_schemas: Dict[str, Schema],
+    contract: Contract
   ):
-    self.thought_instructions = instructions
-    self.thought_main_schema = schema
-    self.thought_aux_schemas = aux_schemas
+    with self.lock:
+      self.reflect_settings = ReflectionSettings(
+        instructions =
+          instructions \
+          + STANDARD_INSTRUCTIONS,
+        main_schema = main_schema,
+        aux_schemas = aux_schemas,
+        contract = contract
+      )
 
 
-  def set_interaction_contracts(self):
+  # --- Reflection requirements ---
+
+  def setup_interaction(self):
     pass #TODO Worry about interactions later
 
 
@@ -230,38 +317,33 @@ class AgentSetup:
     checks = {
       "memory": self.recall != None,
       "configuration": self.config != None,
-      "contracts": self.plan_contract != None and self.thought_contract != None,
-      "planning requirements": self.plan_instructions != None and self.plan_aux_schemas != None,
-      "planning grounded requirements": self.plan_grounded_instructions != None
+      "planning settings": self.plan_settings != None,
+      "grounding settings": self.ground_settings != None,
+      "reflection settings": self.reflect_settings != None,
+      "interaction settings": self.interact_settings != None,
     }
 
     missing = [k for k, v in checks.items() if v is False]
-    failed = len(missing) > 0
-    
-    if failed:
+    if len(missing) > 0:
       raise MissingAgentRequirements(missing)
     
     assert self.recall is not None
     assert self.config is not None
-    assert self.plan_contract is not None
-    assert self.plan_instructions is not None
-    assert self.plan_aux_schemas is not None
-    assert self.plan_grounded_instructions is not None
-    #assert self.thought_contract is not None   TODO
-    #assert self.thought_gen_ruleset is not None  TODO
-    #assert self.thought_gen_schema is not None TODO
-    
+    assert self.plan_settings is not None
+    assert self.ground_settings is not None
+    assert self.reflect_settings is not None
+    assert self.interact_settings is not None
+
+    settings = AgentSettings(
+      planning = self.plan_settings,
+      grounding = self.ground_settings,
+      reflection = self.reflect_settings,
+      interaction = self.interact_settings
+    )
+
     return Agent(
       self.goal,
       self.blackboard,
       self.recall,
-      self.config,
-      self.plan_contract,
-      self.plan_instructions,
-      self.plan_aux_schemas,
-      self.plan_grounded_instructions,
-      Contract(state_keys=[], memory_keys=[]), [], {}, {} #TODO
-      #self.thought_contract,
-      #self.thought_gen_ruleset,
-      #self.thought_gen_schema
+      settings
     )

@@ -30,7 +30,7 @@ class Function(BaseModel):
     parameters: Parameters
 
 
-class Action(BaseModel):
+class Tool(BaseModel):
     type: Literal["function"]
     function: Function
 
@@ -46,6 +46,9 @@ class SchemaField(BaseModel):
     field_type: Literal["string", "integer", "float", "boolean", "object", "list"]
     sub_fields: Dict[str, "SchemaField"] = Field(default_factory=dict[str, "SchemaField"])
 
+    
+Schema = Dict[str, SchemaField]
+
 
 class ActionCall(BaseModel):
     key: str
@@ -55,4 +58,19 @@ class ActionCall(BaseModel):
 class PlanStep(BaseModel):
     task: Dict
     actions: list[ActionCall] = Field(default_factory=list[ActionCall])
-    
+
+
+class SimpleSettings(BaseModel):
+    instructions: list[str]
+    contract: Contract
+    main_schema: Schema
+
+class ExtendedSettings(SimpleSettings):
+    main_schema: Schema
+    aux_schemas: Dict[str, Schema]
+
+
+PlanningSettings = ExtendedSettings
+GroundingSettings = SimpleSettings
+ReflectionSettings = ExtendedSettings
+InteractionSettings = ExtendedSettings

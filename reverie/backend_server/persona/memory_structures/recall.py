@@ -8,31 +8,57 @@ Note (May 1, 2023) -- this class is the Memory Stream module in the generative
 agents paper. 
 """
 import sys
+
+from reverie.backend_server.persona.memory_structures.memory_blocks.memory_box import node_from_core
+from reverie.backend_server.persona.memory_structures.memory_blocks.node import CoreNode, EmbeddingArray, Node, RawNode
+
 sys.path.append('../../')
 
 import json
 import datetime
 
 from global_methods import *
+from typing import Dict, Optional
+from persona.memory_structures.memory_blocks.memory_box import MemoryBox
 from persona.memory_structures.associative_memory import ConceptNode
 
 
 class Recall: 
-  def __init__(self, initial_memory_lists): 
+  def __init__(self, core_nodes: list[CoreNode], box: MemoryBox): 
     self.id_to_node = dict()
 
     self.seq_event = []
     self.seq_thought = []
-    self.seq_chat = []
+    self.seq_interaction = []
 
     self.kw_to_event = dict()
     self.kw_to_thought = dict()
-    self.kw_to_chat = dict()
+    self.kw_to_interaction = dict()
 
     self.kw_strength_event = dict()
     self.kw_strength_thought = dict()
 
-    self.memory_lists = initial_memory_lists    
+    self.core: list[Node] = [node_from_core(node) for node in core_nodes]
+    self.memory: MemoryBox = box    # TODO initialize memory box by calling embedding model for every node (entire node or just description?)
+    self.cache: MemoryBox = MemoryBox()
+
+
+  def load_cache(self,
+    sections: list[str],
+    subject: str,
+    recency: Optional[int] = None,
+    threshold: Optional[int] = None,
+    distance: Optional[float] = None
+  ):
+    for sec in sections:
+      relevant = self.memory.get(
+        sec,
+        subject,
+        recency,
+        threshold,
+        distance
+      )
+      [self.cache.add(sec, node) for node in relevant]
 
     
   def save(self, out_json): 

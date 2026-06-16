@@ -2,23 +2,28 @@ from selenium import webdriver
 
 from global_methods import *
 from persona.aid import Configuration
+from reverie.backend_server.persona.cognitive_modules.reflect_ops import feed_event
 from utils import *
 from maze import *
 
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks, HTTPException
+from uuid import uuid4
 
 from api_classes import *
 from simulation import Simulation
-from persona.agent import AgentSetup, MissingAgentRequirements
+from persona.agent import AgentSetup, MissingAgentRequirements, RepeatedSchemaNames
 
 from typing import Dict
-from persona.cognitive_modules.plan_alt import plan_broad, plan_grounded
-from persona.aid import Action, PlanStep, ActionCall
+from reverie.backend_server.persona.cognitive_modules.plan_ops import op_plan_full, op_plan, op_ground
+from persona.aid import Tool, PlanStep, ActionCall
 
 
 app = FastAPI()
+jobs = {}
 sim: Simulation = Simulation("only_sim") #TODO change if later more simultaneous sims are allowed 
 
+
+# API enpoints
 
 @app.post("/simulation", response_model=CreateSimResponse) #TODO only relevant if multiple simultaneous sims are allowed
 def create_sim(request: CreateSimRequest):
@@ -34,76 +39,141 @@ def create_agent(request: CreateAgentRequest):
     return "ok"
 
 
-@app.post("/simulation/agents/{agent_id}/config", response_model=str)
-def set_agent_config(agent_id: str, request: Configuration):
+@app.post("/simulation/agents/{agent_id}/setup/config", response_model=str)
+def setup_agent_config(agent_id: str, request: Configuration):
     sim.agents_setup[agent_id].set_config(request)
     return "ok"
 
 
-@app.post("/simulation/agents/{agent_id}/memory", response_model=str)
-def set_agent_memory(agent_id: str, request: Dict[str, list]):
-    sim.agents_setup[agent_id].set_memory_lists(request)
+@app.post("/simulation/agents/{agent_id}/setup/memory", response_model=str)
+def setup_agent_memory(agent_id: str, request: SetMemoryRequest):
+    sim.agents_setup[agent_id].set_memory(
+        request.core_nodes,
+        request.node_sections
+    )
     return "ok"
 
 
-@app.post("/simulation/agents/{agent_id}/actions", response_model=str)
-def set_agent_actions(agent_id: str, request: list[Action]):
+@app.post("/simulation/agents/{agent_id}/setup/tools", response_model=str)
+def setup_agent_tools(agent_id: str, request: list[Tool]):
     sim.agents_setup[agent_id].set_actions(request)
     return "ok"
 
 
-@app.post("/simulation/agents/{agent_id}/contracts", response_model=str)
-def set_agent_contracts(agent_id: str, request: SetAgentContractsRequest):
-    sim.agents_setup[agent_id].set_plan_contract(request.plan_contract)
-    sim.agents_setup[agent_id].set_thought_contract(request.thought_contract)
-    sim.agents_setup[agent_id].set_interaction_contracts() #TODO Worry about interactions later
-    return "ok"
-
-
-@app.post("/simulation/agents/{agent_id}/planning_config", response_model=str)
-def set_agent_planning_req(agent_id: str, request: SetAgentPlanReqRequest):
-    sim.agents_setup[agent_id].set_plan_req(
+@app.post("/simulation/agents/{agent_id}/setup/planning", response_model=str)
+def setup_agent_planning(agent_id: str, request: PlanningSetupRequest):
+    sim.agents_setup[agent_id].setup_planning(
         request.instructions,
-        request.plan_aux_schemas
+        request.contract,
+        request.aux_schemas
     )
     return "ok"
 
 
-@app.post("/simulation/agents/{agent_id}/grounded_planning_config", response_model=str)
-def set_agent_grounded_planning_req(agent_id: str, request: SetAgentPlanGroundedReqRequest):
-    sim.agents_setup[agent_id].set_plan_grounded_req(
+@app.post("/simulation/agents/{agent_id}/setup/grounding", response_model=str)
+def setup_agent_grounding(agent_id: str, request: GroundingSetupRequest):
+    sim.agents_setup[agent_id].setup_grounding(
         request.instructions,
+        request.contract
     )
     return "ok"
 
 
-@app.post("/simulation/agents/{agent_id}/finalize", response_model=list[str])
+@app.post("/simulation/agents/{agent_id}/setup/reflection", response_model=str)
+def setup_agent_reflection(agent_id: str, request: ReflectionSetupRequest):
+    sim.agents_setup[agent_id].setup_reflection(
+        request.instructions,
+        request.main_schema,
+        request.aux_schemas,
+        request.contract
+    )
+    return "ok" 
+
+
+@app.post("/simulation/agents/{agent_id}/setup/interaction", response_model=str)
+def setup_agent_interaction(agent_id: str, request: InteractionSetupRequest):
+    sim.agents_setup[agent_id].setup_interaction()
+    return "ok"
+
+
+@app.post("/simulation/agents/{agent_id}/finalize", response_model=Dict)
 def finilaze_agent(agent_id: str):
+    response = {}
     try:
         sim.add_agent(agent_id)
-        return []
+        response["result"] = "success"
+        return {}
     except MissingAgentRequirements as error:
+        response["result"] = "error"
+        response["reason"] = error.reason
+        response["missing_requirements"] = error.missing_requirements
         return error.missing_requirements
+    except RepeatedSchemaNames as error:
+        response["result"] = "error"
+        response["reason"] = error.reason
+        response["repeated_schema_names"] = error.repeated_names
+        return response
 
 
 @app.post("/simulation/agents/{agent_id}/plan", response_model=str)
-def plan(agent_id: str):
-    plan_broad(sim.get_agent(agent_id))
-    return "ok"
+def plan_request(agent_id: str):
+    agent = sim.get_agent(agent_id)
+    op_plan(agent)
 
 
 @app.post("/simulation/agents/{agent_id}/plan_grounded", response_model=str)
-def plan_ground(agent_id: str):
-    plan_grounded(sim.get_agent(agent_id))
+def grounded_request(agent_id: str):
+    op_ground(sim.get_agent(agent_id))
     return "ok"
 
 
+@app.post("/simulation/agents/{agent_id}/feed_event", response_model=str)
+def feed_event_request(agent_id: str, request: FeedEventRequest):
+    agent = sim.get_agent(agent_id)
+    feed_event(agent, request.event, request.weight)
+    return "ok"
 
 
+@app.post("/simulation/agents/{agent_id}/next_action", response_model=ActionCall)
+def next_action(agent_id: str):
+    agent = sim.get_agent(agent_id)
+    action = agent.advance_index()
+    if action is None:
+        raise HTTPException(status_code=404, detail="No next action available")
+    return action
 
 
+@app.get("/simulation/agents/{agent_id}/next_action", response_model=ActionCall)
+def get_current_action(agent_id: str):
+    agent = sim.get_agent(agent_id)
+    action = agent.get_next_action()
+    if action is None:
+        raise HTTPException(status_code=404, detail="No next action available")
+    return action
+
+
+@app.post("/simulation/agents/{agent_id}/plan_all", response_model=str)
+def plan_all_request(agent_id: str, background_tasks: BackgroundTasks):
+    background_tasks.add_task(
+        op_plan_full,
+        sim.get_agent(agent_id)
+    )
+
+    return "ok"
+
+@app.get("/simulation/agents/{agent_id}/tools", response_model=list[Tool])
+def get_tools(agent_id: str):
+    return sim.get_agent(agent_id).blackboard.tools
 
 
 @app.get("/simulation/agents/{agent_id}/plan", response_model=list[PlanStep])
 def get_plan(agent_id: str):
     return sim.get_agent(agent_id).blackboard.curr_plan
+
+
+@app.get("/simulation/agents/{agent_id}/plan/actions", response_model=list[ActionCall])
+def get_actions(agent_id: str):
+    for step in reversed(sim.get_agent(agent_id).blackboard.curr_plan):
+        if step.actions and step.actions[-1].key == "completed_task":
+            return step.actions[0:-1]
+    return []

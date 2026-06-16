@@ -1,26 +1,29 @@
-from persona.aid import Action, Property, SchemaField, ActionCall, Contract
-from utils import merge
+from numpy.typing import NDArray
+
+from persona.aid import Schema, Tool, Property, SchemaField, ActionCall
+from persona.memory_structures.memory_blocks.node import CoreNode, EmbeddingArray, Node, RawNode
+from standard import FOCAL_POINT_SCHEMA, FOCAL_POINT_AUX_SCHEMAS, NODE_REQ_SCHEMA, STANDARD_INSTRUCTIONS
 from persona.agent import Agent
 from typing import Dict, Optional, Any
-from api_classes import MemoryList
 from fastapi import HTTPException
 
+import numpy as np
 import json
 import requests
 
 
-def plan_broad_request(
+def gen_plan(
     agent: Agent,
     relevant_state: Dict[str, Any],
     relevant_memory: list
 ):
-    system_prompt, user_prompt = create_prompt(
+    system_prompt, user_prompt = create_standard_prompt(
         state = relevant_state,
         memory = relevant_memory,
         goal = agent.goal,
-        instructions = agent.plan_instructions,
-        main_schema = agent.plan_main_schema,
-        aux_schemas = agent.plan_aux_schemas,
+        instructions = agent.settings.planning.instructions,
+        main_schema = agent.settings.planning.main_schema,
+        aux_schemas = agent.settings.planning.aux_schemas,
         task = "Make a plan."
     )
 
@@ -35,20 +38,20 @@ def plan_broad_request(
     return clean_up_plan(response)
 
 
-def plan_grounded_request(
+def gen_grounding(
     agent: Agent,
     relevant_state: Dict[str, Any],
     relevant_memory: list,
     plan_task: Dict[str, Any],
     actions_taken: list[ActionCall]
 ):
-    system_prompt, user_prompt = create_prompt(
+    system_prompt, user_prompt = create_standard_prompt(
         state = relevant_state,
         memory = relevant_memory,
-        instructions = agent.plan_grounded_instructions,
+        instructions = agent.settings.grounding.instructions,
         plan_task = plan_task,
         actions_taken = actions_taken,
-        task = "Generate a sequence of necessary tool calls to resolve the task"
+        task = "Generate a complete sequence of necessary tool calls to resolve the task"
     )
 
     print("SYSTEM_PROMPT:\n" + system_prompt + "\n")
@@ -57,27 +60,102 @@ def plan_grounded_request(
     response = llm_request(
         system_prompt = system_prompt,
         user_prompt = user_prompt,
-        tools = agent.blackboard.available_actions
+        tools = agent.blackboard.tools
     )["message"]["tool_calls"]
 
-    print(response)
-
-    return clean_up_plan_grounded(response)
+    return clean_up_ground(response)
 
 
-def get_relevant_pieces(agent: Agent, contract: Contract):
-    common_keys_state = set(contract.state_keys) & set(agent.blackboard.state.keys())
-    common_keys_cache = set(contract.memory_keys) & set(agent.blackboard.cache_lists.keys())
-    common_keys_memory = set(contract.memory_keys) & set(agent.recall.memory_lists.keys())
-    
-    relevant_state = {k: agent.blackboard.state[k] for k in common_keys_state}
-    relevant_memory = relevance_filter(merge(
-        {k: agent.blackboard.cache_lists[k] for k in common_keys_cache},
-        {k: agent.recall.memory_lists[k] for k in common_keys_memory},
-        lambda a, b : a + b
-    ))
+def gen_focal_points(
+    agent: Agent,
+    relevant_state: Dict[str, Any],
+    relevant_memory: list,
+    length: int = 3
+):
+    system_prompt, user_prompt = create_standard_prompt(
+        state = relevant_state,
+        memory = relevant_memory,
+        goal = agent.goal,
+        main_schema = FOCAL_POINT_SCHEMA,
+        aux_schemas = FOCAL_POINT_AUX_SCHEMAS,
+        task = f"Respond with a list of {length} focal points that would be useful for retrieval of memories for this agent."
+    )
 
-    return relevant_state, relevant_memory
+    print("SYSTEM_PROMPT:\n" + system_prompt + "\n")
+    print("USER_PROMPT:\n" + user_prompt + "\n")
+
+    response = llm_request(
+        system_prompt = system_prompt,
+        user_prompt = user_prompt
+    )["message"]["content"]
+
+    return clean_up_focal_points(response)
+
+
+def gen_node_description(raw_node: RawNode) -> str: #TODO
+    system_prompt, user_prompt = create_node_req_prompt(
+        instructions = [
+            "Your response will be less than 50 words",
+            "Your response will not contain JSON",
+            "Your response will be written entirely as natural language"
+        ],
+        object = raw_node.object,
+        task = "Respond with a sentence describing the JSON object presented on Object."
+    )
+
+    print("SYSTEM_PROMPT:\n" + system_prompt + "\n")
+    print("USER_PROMPT:\n" + user_prompt + "\n")
+
+    response = llm_request(
+        system_prompt = system_prompt,
+        user_prompt = user_prompt,
+    )["message"]["content"]
+
+    return clean_up_node_description(response)
+
+
+def gen_node_poignancy(core_nodes: list[Node], description: str) -> int: #TODO
+    system_prompt, user_prompt = create_node_req_prompt(
+        instructions = [
+            "Your response will be a single integer, between 0 and 100, which reflects the importance ",
+            "Your response will not contain JSON",
+        ],
+        object = {"description": description},
+        task = "Respond with an integer between 0 and 100 representing the overall importance of the object presented as Object."
+    )
+
+    print("SYSTEM_PROMPT:\n" + system_prompt + "\n")
+    print("USER_PROMPT:\n" + user_prompt + "\n")
+
+    response = llm_request(
+        system_prompt = system_prompt,
+        user_prompt = user_prompt,
+    )["message"]["content"]
+
+    return clean_up_node_poignancy(response)
+
+
+def gen_node_reqs(core_nodes: list[Node], raw_node: RawNode) -> tuple[str, int]:
+    system_prompt, user_prompt = create_node_req_prompt(
+        instructions = [
+            "Your response will be a single integer, between 0 and 100, which reflects the importance ",
+            "Your response will not contain JSON",
+        ],
+        schema = NODE_REQ_SCHEMA,
+        core_nodes = core_nodes,
+        object = raw_node.object,
+        task = "Respond with an integer between 0 and 100 representing the overall importance of the object presented as Object."
+    )
+
+    print("SYSTEM_PROMPT:\n" + system_prompt + "\n")
+    print("USER_PROMPT:\n" + user_prompt + "\n")
+
+    response = llm_request(
+        system_prompt = system_prompt,
+        user_prompt = user_prompt,
+    )["message"]["content"]
+
+    return clean_up_node_reqs(response)
 
 
 def clean_up_plan(response_string: str) -> Dict:
@@ -88,7 +166,7 @@ def clean_up_plan(response_string: str) -> Dict:
     return json.loads(clean_string)
 
 
-def clean_up_plan_grounded(actions_response: list) -> list[ActionCall]:
+def clean_up_ground(actions_response: list) -> list[ActionCall]:
     actions = [ActionCall(
         key = call["function"]["name"],
         arguments = call["function"]["arguments"])
@@ -96,31 +174,50 @@ def clean_up_plan_grounded(actions_response: list) -> list[ActionCall]:
 
     return actions
 
+def clean_up_focal_points(response_string: str) -> list[str]:
+    start = response_string.find('{')
+    end = response_string.rfind('}') + 1
+    clean_string = response_string[start:end]
+    clean_json = json.loads(clean_string)
 
-def create_prompt(
-    instructions: list[str],
-    main_schema: Optional[Dict[str, SchemaField]] = None,
-    aux_schemas: Optional[Dict[str, Dict[str, SchemaField]]] = None,
+    return [point["key"] for point in clean_json["focal_points"]]
+
+
+def clean_up_node_description(response_string: str) -> str:
+    return response_string
+
+
+def clean_up_node_poignancy(response_string: str) -> int:
+    return int(response_string)
+
+
+def clean_up_node_reqs(response_string: str) -> tuple[str, int]:
+    obj = json.loads(response_string)
+    return (obj["node_description"]["node_poignancy"])
+
+
+def create_standard_prompt(
+    task: str,
+    instructions: Optional[list[str]] = None,
+    main_schema: Optional[Schema] = None,
+    aux_schemas: Optional[Dict[str, Schema]] = None,
     goal: Optional[str] = None,
     state: Optional[Dict[str, Dict]] = None,
     memory: Optional[list] = None,
     plan_task: Optional[Dict] = None,
     actions_taken: Optional[list[ActionCall]] = None,
-    task: Optional[str] = None
 ):
     system_prompt = ""
     user_prompt = ""
 
     ### System prompt
 
-    system_prompt += create_instructions_sec(instructions)
-
+    if instructions is not None and len(instructions) > 0:
+        system_prompt += create_instructions_sec(instructions)
     if main_schema is not None:
         system_prompt += create_mainschema_sec(main_schema)
-    if aux_schemas is not None and aux_schemas.keys():
+    if aux_schemas is not None:
         system_prompt += create_auxschemas_sec(aux_schemas)
-    #if available_actions is not None: TODO uncomment
-        #system_prompt += create_tools_sec(available_actions) TODO uncomment
 
     ### User prompt
 
@@ -130,13 +227,83 @@ def create_prompt(
         user_prompt += create_state_sec(state)
     if memory is not None:
         user_prompt += create_memory_sec(memory)
-    
-    
-    if plan_task is not None and actions_taken is not None:
-        user_prompt += f"The following task is being deconstructed:\n\t{json.dumps(plan_task)}\n"
-        user_prompt += f"The tool calls in this list have been executed:\n\t{json.dumps([action.dict() for action in actions_taken])}\n"
-    if task is not None:
-        user_prompt += f"{task}"
+
+    user_prompt += create_task_sec(task, plan_task, actions_taken)
+
+    return system_prompt, user_prompt
+
+
+def create_node_description_prompt(
+    task: str,
+    instructions: Optional[list[str]] = None,
+    object: Optional[Dict] = None
+):
+    system_prompt = ""
+    user_prompt = ""
+
+    ### System prompt
+
+    if instructions is not None and len(instructions) > 0:
+        system_prompt += create_instructions_sec(instructions)
+
+    ### User prompt
+
+    if object is not None:
+        user_prompt += create_object_sec(object)
+
+    user_prompt += create_task_sec(task)
+
+    return system_prompt, user_prompt
+
+
+def create_node_poignancy_prompt(
+    task: str,
+    instructions: Optional[list[str]] = None,
+    core_nodes: Optional[list[Node]] = None
+):
+    system_prompt = ""
+    user_prompt = ""
+
+    ### System prompt
+
+    if instructions is not None and len(instructions) > 0:
+        system_prompt += create_instructions_sec(instructions)
+
+    ### User prompt
+
+    if core_nodes is not None:
+        user_prompt += create_core_nodes_sec(core_nodes)
+
+    user_prompt += create_task_sec(task)
+
+    return system_prompt, user_prompt
+
+
+def create_node_req_prompt(
+    task: str,
+    instructions: Optional[list[str]] = None,
+    object: Optional[Dict] = None,
+    core_nodes: Optional[list[Node]] = None,
+    schema: Optional[Schema] = None
+): #TODO CONTINUE
+    system_prompt = ""
+    user_prompt = ""
+
+    ### System prompt
+
+    if instructions is not None and len(instructions) > 0:
+        system_prompt += create_instructions_sec(instructions)
+    if schema is not None:
+        system_prompt += create_mainschema_sec(schema)
+
+    ### User prompt
+
+    if core_nodes is not None:
+        user_prompt += create_core_nodes_sec(core_nodes)
+    if object is not None:
+        user_prompt += create_object_sec(object)
+
+    user_prompt += create_task_sec(task)
 
     return system_prompt, user_prompt
 
@@ -148,7 +315,7 @@ def create_instructions_sec(instructions: list[str]) -> str:
     return result
 
 
-def create_mainschema_sec(schema: Dict[str, SchemaField]) -> str:
+def create_mainschema_sec(schema: Schema) -> str:
     result = "# Main Schema\n"
     fields, schema = get_schema_ready(schema)
     result += create_schema_str("##", fields, schema)
@@ -157,7 +324,7 @@ def create_mainschema_sec(schema: Dict[str, SchemaField]) -> str:
     return result
 
 
-def create_auxschemas_sec(schemas: Dict[str, Dict[str, SchemaField]]) -> str:
+def create_auxschemas_sec(schemas: Dict[str, Schema]) -> str:
     result = "# Auxiliary Schemas\n"
 
     for k, v in schemas.items():
@@ -169,7 +336,7 @@ def create_auxschemas_sec(schemas: Dict[str, Dict[str, SchemaField]]) -> str:
     return result
 
 
-def create_tools_sec(tools: Dict[str, Action]) -> str:
+def create_tools_sec(tools: Dict[str, Tool]) -> str:
     result = "# Available Tools\n"
 
     for name, tool in tools.items():
@@ -201,6 +368,33 @@ def create_memory_sec(memory: list) -> str:
 
     return result
 
+def create_object_sec(object: Dict) -> str:
+    result = "# Object"
+    result += json.dumps(object) + "\n\n"
+
+    return result
+
+
+def create_core_nodes_sec(core_nodes: list[Node]) -> str:
+    result = "# Core Memories"
+    result += json.dumps([node.description for node in core_nodes])
+
+    return result
+
+
+def create_task_sec(
+    task: str,
+    plan_task: Optional[Dict] = None,
+    actions_taken: Optional[list[ActionCall]] = None
+) -> str:
+    result = "# Task\n"
+    
+    if plan_task is not None and actions_taken is not None:
+        result += f"The task being deconstruncted is:\n\t{json.dumps(plan_task)}\n"
+        #result += f"The tool calls in this list have been executed:\n\t{json.dumps([action.dict() for action in actions_taken])}\n"
+
+    return result + task
+
 
 def create_schema_str(header: str, fields: list[str], schema: Dict) -> str:
     string = f"{header} Fields\n"
@@ -210,7 +404,7 @@ def create_schema_str(header: str, fields: list[str], schema: Dict) -> str:
     return string
 
 
-def get_schema_ready(schema: Dict[str, SchemaField]) -> tuple[list[str], Dict]:
+def get_schema_ready(schema: Schema) -> tuple[list[str], Dict]:
     field_list = []
     json_schema = {}
 
@@ -258,17 +452,10 @@ def get_tool_schema_ready(tool_name: str, schema: Dict[str, Property]) -> tuple[
     return arg_list, json_schema
 
 
-def relevance_filter(memories: Dict[str, list]):
-    memories_list = []
-    [memories_list.extend(v) for k, v in memories.items()]
-
-    return memories_list
-
-
 def llm_request(
     system_prompt: str,
     user_prompt: str,
-    tools: Optional[list[Action]] = None,
+    tools: Optional[list[Tool]] = None,
     model: str = "qwen3.5:4b"
 ):
     json_body = {
@@ -315,79 +502,18 @@ def llm_request(
     return data
 
 
+def embedding_request(string: str) -> EmbeddingArray:
+    response = requests.post(
+        "http://localhost:11434/api/embed",
+        json={
+            "model": "nomic-embed-text:latest",
+            "input": string,
+        },
+        timeout=30,
+    )
 
+    response.raise_for_status()
+    data = response.json()
 
-
-
-
-
-'''
-### TEST CODE WORKING
-
-
-memory_list = MemoryList(memories = [
-    {
-        "name": "cake",
-        "location": "kitchen",
-        "state": "good to eat"
-    },
-    {
-        "name": "computer",
-        "location": "bedroom",
-        "state": "charged and on"
-    }
-])
-
-curr_ruleset = Ruleset(
-    instructions = [
-        "Formulate a plan with no more than 5 steps",
-        "Each step must be less complex than actions on the level of \" walk to point A and do B; pick up object C, place object D on point E"
-    ]
-)
-
-field_schemaA = FieldSchema(
-    description = "This field describes what actions are taken at this step of the plan",
-    field_type = "string",
-    sub_fields = {}
-)
-
-field_schemaB = FieldSchema(
-   description = "This field is a 0-5 rating of the complexity of this step of the plan",
-   field_type = "integer",
-   sub_fields = {}
-)
-
-curr_schema = Schema(
-    description = "Reference schema for the production of a plan",
-    fields_definitions = {
-        "step_description": field_schemaA,
-        "complexity_rating": field_schemaB
-    }
-)
-
-agent = Agent(
-    "first_agent",
-    "Satisfy one's own needs",
-    {
-        "hunger": 100,
-        "sleepy": 0,
-    },
-    {
-        "objects": memory_list
-    },
-    {},
-    {},
-    curr_ruleset,
-    curr_schema,
-    None,
-    None
-)
-
-contract = Contract(
-    state_keys = ["hunger", "sleepy"],
-    memory_keys = ["objects"]    
-)
-
-
-print(plan(agent, contract))
-'''
+    # /api/embed returns "embeddings", usually a list of embeddings
+    return np.array(data["embeddings"][0], dtype=np.float32)
