@@ -14,8 +14,8 @@ import datetime
 import random
 
 from pydantic import BaseModel, Field
-from reverie.backend_server.persona.memory_structures.memory_blocks.node import CoreNode, Node, RawNode
-from reverie.backend_server.standard import BLOCKING_ACTIONS, DEFAULT_ACTIONS, PLAN_SCHEMA, PLAN_AUX_SCHEMAS, GROUND_SCHEMA, STANDARD_GROUNDING_INSTRUCTIONS, STANDARD_INSTRUCTIONS, STANDARD_PLANNING_INSTRUCTIONS
+from persona.memory_structures.memory_blocks.node import CoreNode, Node, RawNode
+from standard import BLOCKING_ACTIONS, DEFAULT_ACTIONS, PLAN_SCHEMA, PLAN_AUX_SCHEMAS, GROUND_SCHEMA, STANDARD_GROUNDING_INSTRUCTIONS, STANDARD_INSTRUCTIONS, STANDARD_PLANNING_INSTRUCTIONS
 
 sys.path.append('../')
 
@@ -38,7 +38,7 @@ from threading import Lock
 from persona.memory_structures.blackboard import Blackboard
 from persona.memory_structures.recall import Recall
 from api_classes import Contract, SchemaField
-from reverie.backend_server.persona.memory_structures.memory_blocks.memory_box import MemoryBox
+from persona.memory_structures.memory_blocks.memory_box import MemoryBox
 from persona.aid import GroundingSettings, InteractionSettings, PlanStep, PlanningSettings, ReflectionSettings, Schema, Tool, Configuration, SchemaField, ToolCall
 
 
@@ -75,71 +75,73 @@ class RepeatedSchemaNames(AgentException):
 
 
 class Plan:
-    lock: Lock = Lock()
+    
+  def __init__(self):
+    self.lock: Lock = Lock()
 
-    steps: list[PlanStep] = Field(default_factory=list[PlanStep])
-    task_index: int = -1
-    action_index: int = -1
+    self.steps: list[PlanStep] = []
+    self.task_index: int = -1
+    self.action_index: int = -1
 
-    def reset_index(self):
-      with self.lock:
-        self.task_index = -1
-        self.action_index = -1
-
-    def unplanned(self):
-      return self.task_index == -1
-
-    def ungrounded(self):
-      return self.action_index == -1
-
-    def open_plan(self):
-      self.task_index = 0
+  def reset_index(self):
+    with self.lock:
+      self.task_index = -1
       self.action_index = -1
 
-    def open_ground(self):
-      self.action_index = 0
+  def unplanned(self):
+    return self.task_index == -1
 
-    def clear_plan(self):
-      with self.lock:
+  def ungrounded(self):
+    return self.action_index == -1
+
+  def open_plan(self):
+    self.task_index = 0
+    self.action_index = -1
+
+  def open_ground(self):
+    self.action_index = 0
+
+  def clear_plan(self):
+    with self.lock:
+      self.reset_index()
+      self.steps = []
+  
+
+  def advance_index(self) -> bool:
+    with self.lock: 
+      step_index = self.task_index + 1
+      action_index = self.action_index + 1
+      step_limit = len(self.steps)
+      action_limit = len(self.steps[step_index].actions)
+
+      if action_index == action_limit:
+        action_index = 0
+      if step_index == step_limit:
         self.reset_index()
-        self.steps = []
-    
+        return False
 
-    def advance_index(self) -> bool:
-      with self.lock: 
-        step_index = self.task_index + 1
-        action_index = self.action_index + 1
-        step_limit = len(self.steps)
-        action_limit = len(self.steps[step_index].actions)
+      self.task_index = step_index
+      self.action_index = action_index
 
-        if action_index == action_limit:
-          action_index = 0
-        if step_index == step_limit:
-          self.reset_index()
-          return False
-
-        self.task_index = step_index
-        self.action_index = action_index
-
-        return True
+      return True
 
 
-    def next_action(self) -> Optional[ToolCall]:
-      action = None
-      no_reset = True
-      can_continue = lambda: \
-        self.task_index > -1 and \
-        self.action_index > -1 and \
-        action is not None and \
-        action not in BLOCKING_ACTIONS and \
-        action.key == "completed task" and \
-        no_reset
+  def next_action(self) -> Optional[ToolCall]:
+    action = None
+    no_reset = True
+    can_continue = lambda: \
+      self.task_index > -1 and \
+      self.action_index > -1 and \
+      action is not None and \
+      action not in BLOCKING_ACTIONS and \
+      action.key == "completed task" and \
+      no_reset
 
-      while can_continue():
-        action = self \
-          .steps[self.task_index] \
-          .actions[self.action_index]
-        no_reset = self.advance_index()
+    while can_continue():
+      action = self \
+        .steps[self.task_index] \
+        .actions[self.action_index]
+      no_reset = self.advance_index()
 
 
 class ModuleSettings(BaseModel):
@@ -254,8 +256,7 @@ class AgentSetup:
 
   def set_memory(self, core_nodes: list[CoreNode], node_sections: Dict[str, list[CoreNode]]):
     with self.lock:
-      box = MemoryBox(node_sections)
-      self.recall = Recall(core_nodes, box) #TODO do it right...
+      self.recall = Recall(core_nodes, node_sections)
 
 
   def set_actions(self, actions: list[Tool]):
@@ -321,8 +322,16 @@ class AgentSetup:
 
   # --- Reflection requirements ---
 
-  def setup_interaction(self):
-    pass #TODO Worry about interactions later
+  def setup_interaction(self): #TODO Worry about interactions later
+    self.interact_settings = InteractionSettings(
+      instructions = [],
+      main_schema = {},
+      aux_schemas = {},
+      contract = Contract(
+        state_keys = [],
+        memory_keys = []
+      )
+    )
 
 
   def create_agent(self) -> Agent:

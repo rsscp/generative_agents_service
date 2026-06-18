@@ -1,11 +1,10 @@
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
 from persona.aid import Schema, SchemaField, Contract
-from reverie.backend_server.persona.memory_structures.memory_blocks.node import CoreNode
+from persona.memory_structures.memory_blocks.node import CoreNode
 
 
-class SchemaSet(BaseModel):
-    schema_definitions: Dict[str, Dict[str, SchemaField]] = Field(default_factory=dict)
+# ---------- Simulation ----------
 
 
 class CreateSimRequest(BaseModel):
@@ -18,33 +17,13 @@ class CreateSimResponse(BaseModel):
     errors: Optional[list[str]] = None
 
 
-class PlanRequest(BaseModel):
-    TODOOOO: str #TODO
-
-
-class PlanResponse(BaseModel):
-    TODOOOO: str #TODO
-
-
-class MemoryList(BaseModel):
-    memories: list[Dict]
-
-
-class MemoryListRuleset(BaseModel):
-    memory_parameters: list[str] = Field(default_factory=list)
+# ---------- Agent Setup ----------
 
 
 class CreateAgentRequest(BaseModel):
     agent_id: str
     goal: str
     initial_state: Dict[str, Any]
-
-    
-class CreateAgentResponse(BaseModel):
-    result_code: str
-    registered_agent_id: Optional[str] = None
-    status: Optional[str] = None
-    errors: list[str] = []
 
 
 class PlanningSetupRequest(BaseModel):
@@ -72,26 +51,42 @@ class InteractionSetupRequest(BaseModel):
     aux_schemas: Dict[str, Schema]
 
 
-class FeedEventRequest(BaseModel):
-    event: Dict[str, Any]
-    weight: float = 1.0
-
-
 class SetMemoryRequest(BaseModel):
     core_nodes: list[CoreNode]
     node_sections: Dict[str, list[CoreNode]]
 
 
+# ---------- Proactive Requests ----------
 
 
+class ProactiveContext(BaseModel):
+    state: Dict
+    time: float
 
 
-
-
-
-
-
-
-
+class ProactiveRequest(BaseModel):
+    context: ProactiveContext
     
 
+class PlanRequest(ProactiveRequest):
+    temporary_field: bool = False #TODO DELETE
+
+
+class GroundRequest(ProactiveRequest):
+    pass
+
+
+class EventRequest(ProactiveRequest):
+    event: str
+    entities_involved: list[str]
+
+
+class InteractRequest(ProactiveRequest):
+    agents: list[str]
+
+
+# ---------- Debug Requests ----------
+
+
+class LoadCacheDebugRequest(BaseModel):
+    subject: str

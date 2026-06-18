@@ -9,8 +9,7 @@ agents paper.
 """
 import sys
 
-from reverie.backend_server.persona.memory_structures.memory_blocks.memory_box import node_from_core
-from reverie.backend_server.persona.memory_structures.memory_blocks.node import CoreNode, EmbeddingArray, Node, RawNode
+from pydantic import BaseModel
 
 sys.path.append('../../')
 
@@ -19,12 +18,31 @@ import datetime
 
 from global_methods import *
 from typing import Dict, Optional
-from persona.memory_structures.memory_blocks.memory_box import MemoryBox
+from persona.memory_structures.memory_blocks.memory_box import CacheBox, MemoryBox, node_from_core
+from persona.memory_structures.memory_blocks.node import CoreNode, Node, RawNode
 from persona.memory_structures.associative_memory import ConceptNode
 
 
+STANDARD_RECENCY_THRESHOLD = 10
+STANDARD_AGE_THRESHOLD = 1000000
+STANDARD_EXPIRATION_TIME = 3600
+STANDARD_POIGNANCY_THRESHOLD = 60
+STANDARD_SEMANTIC_DISTANCE = 0.3
+
+
+class RecallConfig(BaseModel):
+  recency: int
+  age: float
+  expiration: float
+  poignancy: int
+  distance: float
+
+
 class Recall: 
-  def __init__(self, core_nodes: list[CoreNode], box: MemoryBox): 
+  def __init__(self,
+    core_nodes: list[CoreNode],
+    node_sections: Dict[str, list[CoreNode]],
+  ):
     self.id_to_node = dict()
 
     self.seq_event = []
@@ -38,27 +56,88 @@ class Recall:
     self.kw_strength_event = dict()
     self.kw_strength_thought = dict()
 
+    self.time = 0
+    self.config = RecallConfig(
+      recency = STANDARD_RECENCY_THRESHOLD,
+      age = STANDARD_AGE_THRESHOLD,
+      expiration = STANDARD_EXPIRATION_TIME,
+      poignancy = STANDARD_POIGNANCY_THRESHOLD,
+      distance = STANDARD_SEMANTIC_DISTANCE
+    )
+
     self.core: list[Node] = [node_from_core(node) for node in core_nodes]
-    self.memory: MemoryBox = box    # TODO initialize memory box by calling embedding model for every node (entire node or just description?)
-    self.cache: MemoryBox = MemoryBox()
+    self.memory: MemoryBox = MemoryBox(node_sections)    # TODO initialize memory box by calling embedding model for every node (entire node or just description?)
+    self.cache: CacheBox = CacheBox({sec: [] for sec in node_sections.keys()})
 
 
   def load_cache(self,
     sections: list[str],
     subject: str,
+  ):
+    time_threshold: float = max(0, self.time - self.config.age)
+    touched_threshold: float = max(0, self.time - self.config.expiration)
+
+    self.load_cache_specific(
+      sections,
+      subject,
+      self.config.recency,
+      time_threshold,
+      touched_threshold,
+      self.config.poignancy,
+      self.config.distance,
+    )
+  
+  def load_cache_specific(self,
+    sections: list[str],
+    subject: str,
     recency: Optional[int] = None,
-    threshold: Optional[int] = None,
-    distance: Optional[float] = None
+    time_threshold: Optional[float] = None,
+    touched_threshold: Optional[float] = None,
+    poignancy: Optional[int] = None,
+    distance: Optional[float] = None,
   ):
     for sec in sections:
-      relevant = self.memory.get(
+      relevant = self.memory.fetch(
         sec,
         subject,
         recency,
-        threshold,
+        time_threshold,
+        touched_threshold,
+        poignancy,
         distance
       )
       [self.cache.add(sec, node) for node in relevant]
+
+
+  def load_cache_debug(self, subject: str):
+    secs = self.memory.section_keys()
+    result = {}
+
+    time_threshold: float = max(0, self.time - self.config.age)
+    touched_threshold: float = max(0, self.time - self.config.expiration)
+
+    for sec_name in secs:
+      result[sec_name] = self.memory.test_fetch(sec_name,
+        subject,
+        self.config.recency,
+        time_threshold,
+        touched_threshold,
+        self.config.poignancy,
+        self.config.distance,
+      )
+
+    return result
+
+
+  def update(self, time: float, new_batch: Optional[Dict[str, list[RawNode]]]):
+    if time < self.time:
+      raise Exception("Provided game time is behind agent system accounted time") #TODO fazer exceção mais específica
+  
+    self.cache.cleanup(time, STANDARD_AGE_THRESHOLD)
+
+    if new_batch is not None:
+      self.cache.load_batch(new_batch, self.core)
+      self.memory.load_batch(new_batch, self.core)
 
     
   def save(self, out_json): 

@@ -1,45 +1,41 @@
-from pydantic import BaseModel, Field
+import json
+
 from persona.agent import Agent
-from llm_operations import gen_plan, gen_grounding
-from persona.aid import PlanStep, Contract, ToolCall
-from typing import Dict
-from reverie.backend_server.persona.agent import ModuleSettings
+from generation.operations.module_operations import gen_plan, gen_grounding
+from persona.aid import PlanStep
 
-
-RELEVANT_RECENCY = 10
-RELEVANT_POIGNANCY = 80
-RELEVANT_SEMANTIC_DISTANCE = 0.7
 
 def op_plan(agent: Agent):
     agent.recall.load_cache(
         agent.settings.planning.contract.memory_keys,
-        agent.goal,
-        RELEVANT_RECENCY,
-        RELEVANT_POIGNANCY,
-        RELEVANT_SEMANTIC_DISTANCE
+        agent.goal
     )
-    state = agent.blackboard.state
-    nodes = agent.recall.cache.get_nodes()
+    state = agent.blackboard.state #TODO fetch contract specified fields
+    core = agent.recall.core
+    cache = agent.recall.cache.get_nodes()
+    nodes = core + cache
     context = [{
-        "description": node.description,
-        "memory_object": node.object,
-        "involved_game_enteties": node.entities_involved
+        "description": node.core.description,
+        "involved_game_enteties": node.core.entities_involved
     } for node in nodes]
     
     response = gen_plan(agent, state, context)
-    plan = [PlanStep(task=step) for step in response["plan_steps"]]
+    plan_steps = [PlanStep(task=step) for step in response["plan_steps"]]
     
-    agent.blackboard.curr_plan = plan
+    agent.plan.steps = plan_steps
+    print("Response -> I'm at plan_ops.py")
+    print(json.dumps(response))
     agent.plan.open_plan()
 
 
 def op_ground(agent: Agent):
     state = agent.blackboard.state
-    nodes = agent.recall.cache.get_nodes()
+    core = agent.recall.core
+    cache = agent.recall.cache.get_nodes()
+    nodes = core + cache
     context = [{
-        "description": node.description,
-        "memory_object": node.object,
-        "involved_game_enteties": node.entities_involved
+        "description": node.core.description,
+        "involved_game_enteties": node.core.entities_involved
     } for node in nodes]
 
     if agent.plan.ungrounded():
@@ -53,9 +49,8 @@ def op_ground(agent: Agent):
 
 def op_plan_full(agent: Agent):
     op_plan(agent)
-    plan = agent.blackboard.curr_plan
     
-    while not plan:
+    while not agent.plan.steps:
         op_plan(agent)
-    while not plan[-1].actions or plan[-1].actions[-1] != "completed_task":
+    while not agent.plan.steps[-1].actions or agent.plan.steps[-1].actions[-1] != "completed_task":
         op_ground(agent)

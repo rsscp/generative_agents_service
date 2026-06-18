@@ -2,7 +2,8 @@ from selenium import webdriver
 
 from global_methods import *
 from persona.aid import Configuration
-from reverie.backend_server.persona.cognitive_modules.reflect_ops import feed_event
+from persona.cognitive_modules.reflect_ops import feed_event
+from generation.requests import embedding_request
 from utils import *
 from maze import *
 
@@ -14,7 +15,7 @@ from simulation import Simulation
 from persona.agent import AgentSetup, MissingAgentRequirements, RepeatedSchemaNames
 
 from typing import Dict
-from reverie.backend_server.persona.cognitive_modules.plan_ops import op_plan_full, op_plan, op_ground
+from persona.cognitive_modules.plan_ops import op_plan_full, op_plan, op_ground
 from persona.aid import Tool, PlanStep, ToolCall
 
 
@@ -102,35 +103,36 @@ def finilaze_agent(agent_id: str):
     try:
         sim.add_agent(agent_id)
         response["result"] = "success"
-        return {}
+        return response
     except MissingAgentRequirements as error:
         response["result"] = "error"
         response["reason"] = error.reason
         response["missing_requirements"] = error.missing_requirements
-        return error.missing_requirements
+        raise HTTPException(status_code=404, detail=response)
     except RepeatedSchemaNames as error:
         response["result"] = "error"
         response["reason"] = error.reason
         response["repeated_schema_names"] = error.repeated_names
-        return response
+        raise HTTPException(status_code=404, detail=response)
 
 
 @app.post("/simulation/agents/{agent_id}/plan", response_model=str)
-def plan_request(agent_id: str):
-    agent = sim.get_agent(agent_id)
-    op_plan(agent)
+def plan_request(agent_id: str, request: PlanRequest):
+    #TODO update time, etc, call the thing on recall
+    op_plan(sim.get_agent(agent_id))
+    return "ok"
 
 
-@app.post("/simulation/agents/{agent_id}/plan_grounded", response_model=str)
+@app.post("/simulation/agents/{agent_id}/ground", response_model=str)
 def grounded_request(agent_id: str):
     op_ground(sim.get_agent(agent_id))
     return "ok"
 
 
 @app.post("/simulation/agents/{agent_id}/feed_event", response_model=str)
-def feed_event_request(agent_id: str, request: FeedEventRequest):
+def feed_event_request(agent_id: str, request: EventRequest):
     agent = sim.get_agent(agent_id)
-    feed_event(agent, request.event, request.weight)
+    #feed_event(agent, request.event) TODO FIX
     return "ok"
 
 
@@ -152,6 +154,7 @@ def plan_all_request(agent_id: str, background_tasks: BackgroundTasks):
 
     return "ok"
 
+
 @app.get("/simulation/agents/{agent_id}/tools", response_model=list[Tool])
 def get_tools(agent_id: str):
     return sim.get_agent(agent_id).blackboard.tools
@@ -159,12 +162,24 @@ def get_tools(agent_id: str):
 
 @app.get("/simulation/agents/{agent_id}/plan", response_model=list[PlanStep])
 def get_plan(agent_id: str):
-    return sim.get_agent(agent_id).blackboard.curr_plan
+    return sim.get_agent(agent_id).plan.steps
 
 
 @app.get("/simulation/agents/{agent_id}/plan/actions", response_model=list[ToolCall])
 def get_actions(agent_id: str):
-    for step in reversed(sim.get_agent(agent_id).blackboard.curr_plan):
+    for step in reversed(sim.get_agent(agent_id).plan.steps):
         if step.actions and step.actions[-1].key == "completed_task":
             return step.actions[0:-1]
     return []
+
+
+@app.get("/simulation/agents/{agent_id}/debug/cache", response_model=Dict[str, Dict[str, CoreNode]])
+def debug_cache(agent_id: str):
+    cache = sim.get_agent(agent_id).recall.cache
+    clean = {sec_name: {key: node.core for key, node in sec.items()} for sec_name, sec in cache.sections.items()}
+    return clean
+
+
+@app.get("/simulation/agents/{agent_id}/debug/load_cache", response_model=Dict[str, Any])
+def debug_load_cache(agent_id: str, request: LoadCacheDebugRequest):
+    return sim.get_agent(agent_id).recall.load_cache_debug(request.subject)

@@ -7,9 +7,9 @@ Description: This defines the "Reflect" module for generative agents.
 import sys
 from typing import Any, Dict
 
-from reverie.backend_server.llm_operations import gen_focal_points
-from reverie.backend_server.persona.agent import Agent
-from reverie.backend_server.persona.cognitive_modules.retrieve_ops import retrieve_request
+from generation.operations.module_operations import gen_focal_points
+from persona.agent import Agent
+from persona.cognitive_modules.retrieve_ops import retrieve_request
 sys.path.append('../../')
 
 import datetime
@@ -25,8 +25,8 @@ from persona.cognitive_modules.retrieve import *
 
 
 def feed_event(agent: Agent, event: Dict[str, Any], event_weight: float = 1.0): #TODO make this call methods that lock shared resources
-  if "events" not in agent.blackboard.cache:
-    agent.blackboard.cache["events"] = []
+  if "events" not in agent.recall.cache.section_keys():
+    agent.blackboard.cache.g["events"] = []
   agent.blackboard.cache["events"].append(event)
   process_event(agent, event_weight)
 

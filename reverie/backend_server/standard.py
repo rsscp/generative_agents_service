@@ -1,10 +1,13 @@
-from reverie.backend_server.persona.aid import SchemaField, Tool, Function, Parameters
+from persona.aid import SchemaField, Tool, Function, Parameters
 
 STANDARD_INSTRUCTIONS = [
   "You response will follow the JSON structure specified in Schema.",
   "Always comply with JSON formating.",
   "Any text should be written in English",
-  "Reduce thinking to at most two cycles of reflection"
+  "Reduce thinking to at most two cycles of reflection",
+  "Entities encased such as <<<object>>> are references to know real instances",
+  "You will only include in you response references to instances that were already mentioned",
+  "When refering to a real instance of an entity, always use the instance format (example: <<<object>>>)",
 ]
 
 #---------------------------
@@ -33,6 +36,7 @@ PLAN_AUX_SCHEMAS = {
 #---------------------------
 
 STANDARD_GROUNDING_INSTRUCTIONS = [
+  "Tool calls can only contain primitive values or references to real entity instances"
   "Do not make up values when filling tool call arguments.",
   "All values used on tool call arguments will be pulled from this message.",
   "When generating a complete sequence of tool calls to accomplish a task, make sure the last tool call is 'completed_task' to signal the end of the sequence."

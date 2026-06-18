@@ -8,13 +8,13 @@ import datetime
 import json
 import sys
 
-from reverie.backend_server.persona.memory_structures.memory_blocks.memory_box import MemoryBox
+from persona.memory_structures.memory_blocks.memory_box import MemoryBox
 sys.path.append('../../')
 
 from global_methods import *
 from typing import Dict, Any
 from threading import Lock
-from persona.aid import MemoryLists, Tool, PlanStep
+from persona.aid import Tool, PlanStep
 
 class ReflectionConfig:
     recency_weight = 1
@@ -53,10 +53,6 @@ class Blackboard:
     self.importance_ele_n = 0 
     self.thought_count = 5
     '''
-
-    # Planning
-    self.curr_plan: list[PlanStep] = []
-    self.curr_action = None
 
 
   def set_tools(self, actions: list[Tool]):
