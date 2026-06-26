@@ -73,76 +73,137 @@ class RepeatedSchemaNames(AgentException):
       "Provided schemas named after predefined system schemas"
     )
 
-
 class Plan:
-    
+  
   def __init__(self):
     self.lock: Lock = Lock()
 
+    self.INVALID_T_INDEX = -1
+    self.INITIALIZED_T_INDEX = 0
+    self.INVALID_A_INDEX = -2
+    self.INITIALIZED_A_INDEX = -1
+    
+
     self.steps: list[PlanStep] = []
-    self.task_index: int = -1
-    self.action_index: int = -1
+    self.task_index: int = self.INVALID_T_INDEX
+    self.action_index: int = self.INVALID_A_INDEX
+    self.advance_lock: bool = False
+
 
   def reset_index(self):
     with self.lock:
-      self.task_index = -1
-      self.action_index = -1
+      self.task_index = self.INVALID_T_INDEX
+      self.action_index = self.INVALID_A_INDEX
+
 
   def unplanned(self):
-    return self.task_index == -1
+    return self.task_index == self.INVALID_T_INDEX
+
 
   def ungrounded(self):
-    return self.action_index == -1
+    return self.action_index == self.INVALID_A_INDEX
+  
+
+  def ready(self):
+    result = \
+      self.task_index >= self.INITIALIZED_T_INDEX and \
+      self.action_index >= self.INITIALIZED_A_INDEX
+    
+    print(f"Ready: {result}")
+
+    return result
+
 
   def open_plan(self):
-    self.task_index = 0
-    self.action_index = -1
+    with self.lock:
+      self.task_index = self.INITIALIZED_T_INDEX
+      self.action_index = self.INVALID_A_INDEX
+
 
   def open_ground(self):
-    self.action_index = 0
+    with self.lock:
+      if self.action_index == self.INVALID_A_INDEX:
+        self.action_index = self.INITIALIZED_A_INDEX
+
 
   def clear_plan(self):
     with self.lock:
       self.reset_index()
       self.steps = []
+
+
+  def allowed_jump(self) -> bool:
+    result = \
+      self.steps[self.task_index].actions[self.action_index].key == "completed_task" and \
+      self.task_index + 1 < len(self.steps) and \
+      len(self.steps[self.task_index + 1].actions) > 0
+
+    return result
+
+  
+  def allowed_next(self) -> bool:
+    result = self.action_index + 1 < len(self.steps[self.task_index].actions)
+
+    print(f"Allowed Next: {result}")
+
+    return result
+  
+  
+  def allowed_reset(self) -> bool:
+    result = \
+      self.steps[self.task_index].actions[self.action_index].key == "completed_task" and \
+      self.task_index == len(self.steps) - 1
+    
+    print(f"Allowed Reset: {result}")
+
+    return result
   
 
-  def advance_index(self) -> bool:
-    with self.lock: 
-      step_index = self.task_index + 1
-      action_index = self.action_index + 1
-      step_limit = len(self.steps)
-      action_limit = len(self.steps[step_index].actions)
+  def advance_index(self) -> tuple[bool, Optional[ToolCall], str]:
+    action = None
+    hit = True
+    key = ""
 
-      if action_index == action_limit:
-        action_index = 0
-      if step_index == step_limit:
-        self.reset_index()
-        return False
+    task_index = self.task_index
+    action_index = self.action_index
 
-      self.task_index = step_index
-      self.action_index = action_index
+    if not self.ready():
+      hit = False
+    elif self.allowed_next():
+      action_index += 1
+    elif self.allowed_jump():
+      task_index += 1
+      action_index = self.INITIALIZED_A_INDEX
+    elif self.allowed_reset():
+      task_index = self.INVALID_T_INDEX
+      action_index = self.INVALID_A_INDEX
+      hit = False
+    else:
+      hit = False
 
-      return True
+    if hit:
+      action = self \
+        .steps[task_index] \
+        .actions[action_index]
+      key = action.key
+    
+    self.task_index = task_index
+    self.action_index = action_index
 
+    return hit, action, key
+  
 
   def next_action(self) -> Optional[ToolCall]:
-    action = None
-    no_reset = True
-    can_continue = lambda: \
-      self.task_index > -1 and \
-      self.action_index > -1 and \
-      action is not None and \
-      action not in BLOCKING_ACTIONS and \
-      action.key == "completed task" and \
-      no_reset
+    hit, action, key = True, None, "completed_task"
 
-    while can_continue():
-      action = self \
-        .steps[self.task_index] \
-        .actions[self.action_index]
-      no_reset = self.advance_index()
+    while key == "completed_task":
+      hit, action, key = self.advance_index()
 
+      print("\n\n\n")
+      print(f"Index: ({self.task_index}, {self.action_index})")
+      
+    return action
+      
 
 class ModuleSettings(BaseModel):
   contract: Optional[Contract] = None
@@ -262,7 +323,7 @@ class AgentSetup:
   def set_actions(self, actions: list[Tool]):
     with self.lock:
       self.blackboard.set_tools(actions)
-      self.blackboard.tools += DEFAULT_ACTIONS
+      #self.blackboard.tools += DEFAULT_ACTIONS
 
 
   # --- Planning requirements ---

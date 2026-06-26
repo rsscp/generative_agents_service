@@ -1,27 +1,35 @@
 from persona.aid import Schema, ToolCall
-from generation.prompt_building import create_auxschemas_sec, create_goal_sec, create_instructions_sec, create_mainschema_sec, create_memory_sec, create_state_sec, create_task_sec
+from generation.prompt_building import create_auxschemas_sec, create_goal_sec, create_instructions_sec, create_mainschema_sec, create_memory_sec, create_state_sec, create_task_sec, create_entities_sec
 from generation.requests import llm_request
-from standard import FOCAL_POINT_SCHEMA, FOCAL_POINT_AUX_SCHEMAS, STANDARD_INSTRUCTIONS
+from standard import FOCAL_POINT_SCHEMA, FOCAL_POINT_AUX_SCHEMAS
 from persona.agent import Agent
 from typing import Dict, Optional, Any
 
 import json
 
 
+done = False
+
 def gen_plan(
     agent: Agent,
     relevant_state: Dict[str, Any],
-    relevant_memory: list
+    relevant_memory: list[str],
+    entities: list[str]
 ):
     system_prompt, user_prompt = create_standard_prompt(
         state = relevant_state,
         memory = relevant_memory,
+        entities = entities,
         goal = agent.goal,
         instructions = agent.settings.planning.instructions,
         main_schema = agent.settings.planning.main_schema,
         aux_schemas = agent.settings.planning.aux_schemas,
         task = "Make a plan."
     )
+    print("System Prompt:")
+    print(system_prompt)
+    print("User Prompt")
+    print(user_prompt)
     response = llm_request(
         system_prompt = system_prompt,
         user_prompt = user_prompt,
@@ -34,17 +42,26 @@ def gen_grounding(
     agent: Agent,
     relevant_state: Dict[str, Any],
     relevant_memory: list,
+    entities: list[str],
     plan_task: Dict[str, Any],
     actions_taken: list[ToolCall]
 ):
     system_prompt, user_prompt = create_standard_prompt(
         state = relevant_state,
         memory = relevant_memory,
+        entities = entities,
         instructions = agent.settings.grounding.instructions,
         plan_task = plan_task,
         actions_taken = actions_taken,
         task = "Generate a complete sequence of necessary tool calls to resolve the task"
     )
+    global done
+    if not done:
+        print("System Prompt:")
+        print(system_prompt)
+        print("User Prompt")
+        print(user_prompt)
+        done = True
     response = llm_request(
         system_prompt = system_prompt,
         user_prompt = user_prompt,
@@ -90,7 +107,7 @@ def clean_up_ground(actions_response: list) -> list[ToolCall]:
         arguments = call["function"]["arguments"])
     for call in actions_response]
 
-    return actions
+    return actions + [ToolCall(key="completed_task", arguments={})]
 
 def clean_up_focal_points(response_string: str) -> list[str]:
     start = response_string.find('{')
@@ -108,7 +125,8 @@ def create_standard_prompt(
     aux_schemas: Optional[Dict[str, Schema]] = None,
     goal: Optional[str] = None,
     state: Optional[Dict[str, Dict]] = None,
-    memory: Optional[list] = None,
+    memory: Optional[list[str]] = None,
+    entities: Optional[list[str]] = None,
     plan_task: Optional[Dict] = None,
     actions_taken: Optional[list[ToolCall]] = None,
 ):
@@ -132,6 +150,8 @@ def create_standard_prompt(
         user_prompt += create_state_sec(state)
     if memory is not None:
         user_prompt += create_memory_sec(memory)
+    if entities is not None:
+        user_prompt += create_entities_sec(entities)
 
     user_prompt += create_task_sec(task, plan_task, actions_taken)
 

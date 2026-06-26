@@ -108,12 +108,12 @@ def finilaze_agent(agent_id: str):
         response["result"] = "error"
         response["reason"] = error.reason
         response["missing_requirements"] = error.missing_requirements
-        raise HTTPException(status_code=404, detail=response)
+        raise HTTPException(status_code=409, detail=response)
     except RepeatedSchemaNames as error:
         response["result"] = "error"
         response["reason"] = error.reason
         response["repeated_schema_names"] = error.repeated_names
-        raise HTTPException(status_code=404, detail=response)
+        raise HTTPException(status_code=422, detail=response)
 
 
 @app.post("/simulation/agents/{agent_id}/plan", response_model=str)

@@ -1,13 +1,17 @@
 from persona.aid import SchemaField, Tool, Function, Parameters
 
+ENTITY_FENCES = ("*<", ">")
+
+#---------------------------
+
 STANDARD_INSTRUCTIONS = [
   "You response will follow the JSON structure specified in Schema.",
   "Always comply with JSON formating.",
   "Any text should be written in English",
   "Reduce thinking to at most two cycles of reflection",
-  "Entities encased such as <<<object>>> are references to know real instances",
-  "You will only include in you response references to instances that were already mentioned",
-  "When refering to a real instance of an entity, always use the instance format (example: <<<object>>>)",
+  f"Entity instances represent places, objects or characters and they are presented in the format {ENTITY_FENCES[0]}entity{ENTITY_FENCES[1]}",
+  f"When referencing an entity instance always use their formated id, such as {ENTITY_FENCES[0]}entity{ENTITY_FENCES[1]}",
+  "You are only able to reference entity instances that are presented in Entity Instances"
 ]
 
 #---------------------------
@@ -36,10 +40,9 @@ PLAN_AUX_SCHEMAS = {
 #---------------------------
 
 STANDARD_GROUNDING_INSTRUCTIONS = [
-  "Tool calls can only contain primitive values or references to real entity instances"
+  "Tool calls can only contain primitive values or references to real entity instances",
   "Do not make up values when filling tool call arguments.",
-  "All values used on tool call arguments will be pulled from this message.",
-  "When generating a complete sequence of tool calls to accomplish a task, make sure the last tool call is 'completed_task' to signal the end of the sequence."
+  "The generated tool call sequence must end with a call to \"completed_task\""
 ]
 GROUND_SCHEMA = {
     "sequencial_actions": SchemaField(

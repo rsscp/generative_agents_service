@@ -129,18 +129,18 @@ class Recall:
     return result
 
 
-  def update(self, time: float, new_batch: Optional[Dict[str, list[RawNode]]]):
-    if time < self.time:
+  def update(self, curr_time: float, new_batch: Optional[Dict[str, list[RawNode]]]):
+    if curr_time < self.time:
       raise Exception("Provided game time is behind agent system accounted time") #TODO fazer exceção mais específica
   
-    self.cache.cleanup(time, STANDARD_AGE_THRESHOLD)
+    self.cache.cleanup(curr_time, STANDARD_AGE_THRESHOLD)
 
     if new_batch is not None:
       self.cache.load_batch(new_batch, self.core)
       self.memory.load_batch(new_batch, self.core)
 
     
-  def save(self, out_json): 
+  def save(self, out_json):
     r = dict()
     for count in range(len(self.id_to_node.keys()), 0, -1): 
       node_id = f"node_{str(count)}"

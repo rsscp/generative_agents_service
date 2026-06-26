@@ -116,9 +116,16 @@ def create_state_sec(state: Dict[str, Dict]) -> str:
     return result
 
 
-def create_memory_sec(memory: list) -> str:
+def create_memory_sec(memory: list[str]) -> str:
     result = "# Memory\n"
     result += json.dumps(memory) + "\n\n"
+
+    return result
+
+
+def create_entities_sec(entities: list[str]):
+    result = "# Entity Instances\n"
+    result += json.dumps(entities) + "\n\n"
 
     return result
 

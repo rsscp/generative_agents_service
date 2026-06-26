@@ -32,5 +32,9 @@ class RawNode(BaseModel):
     description: str
     entities_involved: list[str]
 
+
+class EntityNode(BaseModel):
+    description: str
+
 MemorySection = Dict[str, Node]
 MemoryBatch = Dict[str, MemorySection]
