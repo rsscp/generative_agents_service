@@ -11,9 +11,20 @@ def get_op_foundations(agent: Agent):
     nodes = core + cache
     state = {key: agent.blackboard.state[key] for key in agent.settings.planning.contract.state_keys}
     context = [node.core.description for node in nodes]
-    entities = list(set([entity for node in nodes for entity in node.core.entities_involved])) #TODO Is this list > to set > to list too goofy?
 
-    return state, context, entities
+    entities = [{
+        "entity_id": entity.id,
+        "description": entity.description
+    } for entity in agent.blackboard.attended_entities]
+
+    affordances = [{
+        "affordance_id": entity.id + "." + affordance,
+        "description": entity.description,
+        "affected_entity_id": entity.id
+    } for entity in agent.blackboard.attended_entities
+      for affordance in entity.affordances]
+
+    return state, context, entities, affordances
 
 
 def op_plan(agent: Agent):
@@ -22,7 +33,7 @@ def op_plan(agent: Agent):
         agent.goal
     )
 
-    state, context, entities = get_op_foundations(agent)
+    state, context, entities, affordances = get_op_foundations(agent)
     response = gen_plan(agent, state, context, entities)
     plan_steps = [PlanStep(task=step) for step in response["plan_steps"]]
     
@@ -31,11 +42,26 @@ def op_plan(agent: Agent):
 
 
 def op_ground(agent: Agent):
-    state, context, entities = get_op_foundations(agent)
+    state, context, entities, affordances = get_op_foundations(agent)
+
+    plan_task = agent.plan.steps[agent.plan.task_index].task 
+    actions_taken = agent.plan.current_action_sequence()
+
+    if plan_task is not None and actions_taken is not None:
+        response = gen_grounding(
+            agent,
+            state,
+            context, 
+            entities, 
+            affordances,
+            plan_task,
+            actions_taken
+        ) #TODO include in gen the logic for this to addon actions instead of generating an entirely new sequence. Or make the agent plan one action at a time, at the request of the client
+        agent.plan.add_actions(response)
 
     for step in agent.plan.steps:
         if len(step.actions) == 0 or step.actions[-1].key != "completed_task":
-            response = gen_grounding(agent, state, context, entities, step.task, step.actions) #TODO include in gen the logic for this to addon actions instead of generating an entirely new sequence. Or make the agent plan one action at a time, at the request of the client
+            response = gen_grounding(agent, state, context, entities, affordances, step.task, step.actions) #TODO include in gen the logic for this to addon actions instead of generating an entirely new sequence. Or make the agent plan one action at a time, at the request of the client
             step.actions += response
             break
 

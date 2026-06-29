@@ -21,6 +21,7 @@ from typing import Dict, Optional
 from persona.memory_structures.memory_blocks.memory_box import CacheBox, MemoryBox, node_from_core
 from persona.memory_structures.memory_blocks.node import CoreNode, Node, RawNode
 from persona.memory_structures.associative_memory import ConceptNode
+from persona.aid import Entity
 
 
 STANDARD_RECENCY_THRESHOLD = 10
@@ -66,7 +67,7 @@ class Recall:
     )
 
     self.core: list[Node] = [node_from_core(node) for node in core_nodes]
-    self.memory: MemoryBox = MemoryBox(node_sections)    # TODO initialize memory box by calling embedding model for every node (entire node or just description?)
+    self.memory: MemoryBox = MemoryBox(node_sections)
     self.cache: CacheBox = CacheBox({sec: [] for sec in node_sections.keys()})
 
 

@@ -15,7 +15,7 @@ import random
 
 from pydantic import BaseModel, Field
 from persona.memory_structures.memory_blocks.node import CoreNode, Node, RawNode
-from standard import BLOCKING_ACTIONS, DEFAULT_ACTIONS, PLAN_SCHEMA, PLAN_AUX_SCHEMAS, GROUND_SCHEMA, STANDARD_GROUNDING_INSTRUCTIONS, STANDARD_INSTRUCTIONS, STANDARD_PLANNING_INSTRUCTIONS
+from standard import DEFAULT_ACTIONS, PLAN_SCHEMA, PLAN_AUX_SCHEMAS, GROUND_SCHEMA, STANDARD_GROUNDING_INSTRUCTIONS, STANDARD_INSTRUCTIONS, STANDARD_PLANNING_INSTRUCTIONS
 
 sys.path.append('../')
 
@@ -104,13 +104,30 @@ class Plan:
     return self.action_index == self.INVALID_A_INDEX
   
 
+  def current_task(self) -> Optional[Dict]:
+    if not self.unplanned():
+      return None
+    else:
+      return self.steps[self.task_index].task
+    
+
+  def add_actions(self, actions: list[ToolCall]):
+    if not self.ungrounded():
+      self.steps[self.task_index].actions += actions
+
+
+  def current_action_sequence(self) -> Optional[list[ToolCall]]:
+    if self.ungrounded():
+      return None
+    else:
+      return self.steps[self.task_index].actions
+  
+
   def ready(self):
     result = \
       self.task_index >= self.INITIALIZED_T_INDEX and \
       self.action_index >= self.INITIALIZED_A_INDEX
     
-    print(f"Ready: {result}")
-
     return result
 
 
@@ -144,8 +161,6 @@ class Plan:
   def allowed_next(self) -> bool:
     result = self.action_index + 1 < len(self.steps[self.task_index].actions)
 
-    print(f"Allowed Next: {result}")
-
     return result
   
   
@@ -153,8 +168,6 @@ class Plan:
     result = \
       self.steps[self.task_index].actions[self.action_index].key == "completed_task" and \
       self.task_index == len(self.steps) - 1
-    
-    print(f"Allowed Reset: {result}")
 
     return result
   
@@ -320,9 +333,9 @@ class AgentSetup:
       self.recall = Recall(core_nodes, node_sections)
 
 
-  def set_actions(self, actions: list[Tool]):
+  def set_tools(self, actions: list[Tool]):
     with self.lock:
-      self.blackboard.set_tools(actions)
+      self.blackboard.set_tools(actions + DEFAULT_ACTIONS)
       #self.blackboard.tools += DEFAULT_ACTIONS
 
 

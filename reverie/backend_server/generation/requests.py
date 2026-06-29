@@ -73,4 +73,12 @@ def llm_request(
     response.raise_for_status()
     data = response.json()
 
+    print("total:", data["total_duration"] / 1e9)
+    print("load:", data["load_duration"] / 1e9)
+    print("prompt eval:", data["prompt_eval_duration"] / 1e9)
+    print("generation:", data["eval_duration"] / 1e9)
+
+    print("input tokens:", data["prompt_eval_count"])
+    print("output tokens:", data["eval_count"])
+
     return data

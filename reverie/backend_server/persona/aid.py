@@ -58,7 +58,6 @@ class ToolCall(BaseModel):
 class PlanStep(BaseModel):
     task: Dict
     actions: list[ToolCall] = Field(default_factory=list[ToolCall])
-    locked: bool = False
     complete: bool = False
 
 
@@ -66,6 +65,7 @@ class SimpleSettings(BaseModel):
     instructions: list[str]
     contract: Contract
     main_schema: Schema
+
 
 class ExtendedSettings(SimpleSettings):
     main_schema: Schema
@@ -76,3 +76,9 @@ PlanningSettings = ExtendedSettings
 GroundingSettings = SimpleSettings
 ReflectionSettings = ExtendedSettings
 InteractionSettings = ExtendedSettings
+
+
+class Entity(BaseModel):
+    id: str
+    description: str
+    affordances: list[str]

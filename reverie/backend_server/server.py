@@ -1,7 +1,7 @@
 from selenium import webdriver
 
 from global_methods import *
-from persona.aid import Configuration
+from persona.aid import Configuration, Entity
 from persona.cognitive_modules.reflect_ops import feed_event
 from generation.requests import embedding_request
 from utils import *
@@ -57,7 +57,7 @@ def setup_agent_memory(agent_id: str, request: SetMemoryRequest):
 
 @app.post("/simulation/agents/{agent_id}/setup/tools", response_model=str)
 def setup_agent_tools(agent_id: str, request: list[Tool]):
-    sim.agents_setup[agent_id].set_actions(request)
+    sim.agents_setup[agent_id].set_tools(request)
     return "ok"
 
 
@@ -151,13 +151,12 @@ def plan_all_request(agent_id: str, background_tasks: BackgroundTasks):
         op_plan_full,
         sim.get_agent(agent_id)
     )
-
     return "ok"
 
 
 @app.get("/simulation/agents/{agent_id}/tools", response_model=list[Tool])
 def get_tools(agent_id: str):
-    return sim.get_agent(agent_id).blackboard.tools
+    return sim.get_agent(agent_id).blackboard.generic_tools
 
 
 @app.get("/simulation/agents/{agent_id}/plan", response_model=list[PlanStep])
@@ -183,3 +182,23 @@ def debug_cache(agent_id: str):
 @app.get("/simulation/agents/{agent_id}/debug/load_cache", response_model=Dict[str, Any])
 def debug_load_cache(agent_id: str, request: LoadCacheDebugRequest):
     return sim.get_agent(agent_id).recall.load_cache_debug(request.subject)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.post("/simulation/agents/{agent_id}/test/push_entities", response_model=str)
+def test_push_entities(agent_id: str, request: list[Entity]):
+    sim.get_agent(agent_id).blackboard.attended_entities += request
+    return "ok"

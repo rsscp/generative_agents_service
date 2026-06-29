@@ -14,7 +14,7 @@ sys.path.append('../../')
 from global_methods import *
 from typing import Dict, Any
 from threading import Lock
-from persona.aid import Tool, PlanStep
+from persona.aid import Entity, Tool, PlanStep
 
 class ReflectionConfig:
     recency_weight = 1
@@ -37,7 +37,8 @@ class Blackboard:
     self.att_bandwidth = 3
     self.retention = 5
     self.state = initial_state
-    self.tools: list[Tool] = []
+    self.generic_tools: list[Tool] = []
+    self.attended_entities: list[Entity] = []
 
     # Reflection
     self.reflection_config = ReflectionConfig()
@@ -57,7 +58,7 @@ class Blackboard:
 
   def set_tools(self, actions: list[Tool]):
     with self.lock:
-      self.tools = actions
+      self.generic_tools = actions
 
 
   def get_f_daily_schedule_index(self, advance=0):

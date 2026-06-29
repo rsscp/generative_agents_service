@@ -1,4 +1,4 @@
-from persona.aid import SchemaField, Tool, Function, Parameters
+from persona.aid import Property, SchemaField, Tool, Function, Parameters
 
 ENTITY_FENCES = ("*<", ">")
 
@@ -46,9 +46,9 @@ STANDARD_GROUNDING_INSTRUCTIONS = [
 ]
 GROUND_SCHEMA = {
     "sequencial_actions": SchemaField(
-        description = "List of sequencial tool calls that aim to complete the task",
-        guidelines = "Should have as many tool calls as necessary to complete task",
-        field_type = "list"
+        description = "Single tool call",
+        guidelines = "Should be the next action to take in a sequence of previous tool calls",
+        field_type = "object"
     )
 }
 
@@ -104,12 +104,17 @@ DEFAULT_ACTIONS = [
   Tool(
     type = "function",
     function = Function(
-      name = "completed_task",
-      description = "This action is used to end a sequence of actions that already acomplish the described task",
+      name = "execute_affordance",
+      description = "This action is used to execute an affordance available under Entity Affordances",
       parameters = Parameters(
         type = "object",
         required = [],
-        properties = {}
+        properties = {
+          "affordance_id": Property(
+            type = "string",
+            description = "Id of the affordance to execute"
+          )
+        }
       )
     )
   )

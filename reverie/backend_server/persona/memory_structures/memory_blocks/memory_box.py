@@ -19,7 +19,7 @@ def node_from_raw(raw_node: RawNode, core_nodes: list[Node], curr_time: float = 
         return Node(CoreNode(
             poignancy = gen_node_poignancy(core_nodes, raw_node.description),
             description = raw_node.description,
-            entities_involved = raw_node.entities_involved
+            entity_keys = raw_node.entity_keys
         ), curr_time)
 
 

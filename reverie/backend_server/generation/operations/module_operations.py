@@ -1,5 +1,5 @@
 from persona.aid import Schema, ToolCall
-from generation.prompt_building import create_auxschemas_sec, create_goal_sec, create_instructions_sec, create_mainschema_sec, create_memory_sec, create_state_sec, create_task_sec, create_entities_sec
+from generation.prompt_building import create_affordances_sec, create_auxschemas_sec, create_goal_sec, create_instructions_sec, create_mainschema_sec, create_memory_sec, create_state_sec, create_task_sec, create_entities_sec
 from generation.requests import llm_request
 from standard import FOCAL_POINT_SCHEMA, FOCAL_POINT_AUX_SCHEMAS
 from persona.agent import Agent
@@ -14,7 +14,7 @@ def gen_plan(
     agent: Agent,
     relevant_state: Dict[str, Any],
     relevant_memory: list[str],
-    entities: list[str]
+    entities: list[Dict]
 ):
     system_prompt, user_prompt = create_standard_prompt(
         state = relevant_state,
@@ -42,7 +42,8 @@ def gen_grounding(
     agent: Agent,
     relevant_state: Dict[str, Any],
     relevant_memory: list,
-    entities: list[str],
+    entities: list[Dict],
+    affordances: list[Dict],
     plan_task: Dict[str, Any],
     actions_taken: list[ToolCall]
 ):
@@ -50,10 +51,11 @@ def gen_grounding(
         state = relevant_state,
         memory = relevant_memory,
         entities = entities,
+        affordances = affordances,
         instructions = agent.settings.grounding.instructions,
         plan_task = plan_task,
         actions_taken = actions_taken,
-        task = "Generate a complete sequence of necessary tool calls to resolve the task"
+        task = "Generate the next tool call in a sequence of tool calls to complete the given task"
     )
     global done
     if not done:
@@ -65,7 +67,7 @@ def gen_grounding(
     response = llm_request(
         system_prompt = system_prompt,
         user_prompt = user_prompt,
-        tools = agent.blackboard.tools
+        tools = agent.blackboard.generic_tools
     )["message"]["tool_calls"]
 
     return clean_up_ground(response)
@@ -126,7 +128,8 @@ def create_standard_prompt(
     goal: Optional[str] = None,
     state: Optional[Dict[str, Dict]] = None,
     memory: Optional[list[str]] = None,
-    entities: Optional[list[str]] = None,
+    entities: Optional[list[Dict]] = None,
+    affordances: Optional[list[Dict]] = None,
     plan_task: Optional[Dict] = None,
     actions_taken: Optional[list[ToolCall]] = None,
 ):
@@ -152,6 +155,8 @@ def create_standard_prompt(
         user_prompt += create_memory_sec(memory)
     if entities is not None:
         user_prompt += create_entities_sec(entities)
+    if affordances is not None:
+        user_prompt += create_affordances_sec(affordances)
 
     user_prompt += create_task_sec(task, plan_task, actions_taken)
 

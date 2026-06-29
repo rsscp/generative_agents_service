@@ -123,9 +123,15 @@ def create_memory_sec(memory: list[str]) -> str:
     return result
 
 
-def create_entities_sec(entities: list[str]):
+def create_entities_sec(entities: list[Dict]):
     result = "# Entity Instances\n"
     result += json.dumps(entities) + "\n\n"
+
+    return result
+
+def create_affordances_sec(affordances: list[Dict]):
+    result = "# Entity Affordances\n"
+    result += json.dumps(affordances) + "\n\n"
 
     return result
 
@@ -153,6 +159,6 @@ def create_task_sec(
 
     if plan_task is not None and actions_taken is not None:
         result += f"The task being deconstruncted is:\n\t{json.dumps(plan_task)}\n"
-        #result += f"The tool calls in this list have been executed:\n\t{json.dumps([action.dict() for action in actions_taken])}\n"
+        result += f"The tool calls in this list have already been executed:\n\t{json.dumps([action.dict() for action in actions_taken])}\n"
 
     return result + task
