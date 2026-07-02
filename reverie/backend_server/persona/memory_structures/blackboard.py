@@ -28,7 +28,8 @@ class Blackboard:
   
   def __init__(
     self,
-    initial_state: Dict[str, Any],
+    state: Dict[str, Any],
+    entities: list[Entity]
   ): 
     # Concurrence
     self.lock = Lock()
@@ -36,9 +37,9 @@ class Blackboard:
     # Memory
     self.att_bandwidth = 3
     self.retention = 5
-    self.state = initial_state
+    self.state = state
+    self.attended_entities: Dict[str, Entity] = {entity.id: entity for entity in entities}
     self.generic_tools: list[Tool] = []
-    self.attended_entities: list[Entity] = []
 
     # Reflection
     self.reflection_config = ReflectionConfig()

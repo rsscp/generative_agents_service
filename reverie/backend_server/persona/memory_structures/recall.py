@@ -18,8 +18,8 @@ import datetime
 
 from global_methods import *
 from typing import Dict, Optional
-from persona.memory_structures.memory_blocks.memory_box import CacheBox, MemoryBox, node_from_core
-from persona.memory_structures.memory_blocks.node import CoreNode, Node, RawNode
+from persona.memory_structures.memory_blocks.memory_box import CacheBox, MemoryBox, node_from_core, node_from_raw
+from persona.memory_structures.memory_blocks.node import CoreNode, MemoryNode, RawNode
 from persona.memory_structures.associative_memory import ConceptNode
 from persona.aid import Entity
 
@@ -66,7 +66,9 @@ class Recall:
       distance = STANDARD_SEMANTIC_DISTANCE
     )
 
-    self.core: list[Node] = [node_from_core(node) for node in core_nodes]
+    node_sections["tasks_progress"] = []
+
+    self.core: list[MemoryNode] = [node_from_core(node) for node in core_nodes]
     self.memory: MemoryBox = MemoryBox(node_sections)
     self.cache: CacheBox = CacheBox({sec: [] for sec in node_sections.keys()})
 
@@ -128,6 +130,14 @@ class Recall:
       )
 
     return result
+  
+
+  def add_task_progress(self, task: str):
+    node = node_from_raw(RawNode(
+      description = task, entity_keys = set()
+    ), self.core)
+    self.memory.add("tasks_progress", node)
+    self.cache.add("tasks_progress", node)
 
 
   def update(self, curr_time: float, new_batch: Optional[Dict[str, list[RawNode]]]):

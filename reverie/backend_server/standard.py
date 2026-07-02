@@ -14,6 +14,29 @@ STANDARD_INSTRUCTIONS = [
   "You are only able to reference entity instances that are presented in Entity Instances"
 ]
 
+
+#---------------------------
+
+STANDARD_ROUTINE_SELECTION_INSTRUCTIONS = [
+  "Routines represent a general guide for behaviour",
+  "Choose the single routine that seems more appropriate given most recent memories and agent identity",
+  "Choose also a specific goal that fits in the description of the chosen routine",
+  "Fill the response schema with those choices"
+]
+ROUTINE_SELECTION_SCHEMA = {
+  "routine_choice": SchemaField(
+    description = "Name of the chosen routine",
+    guidelines = "Has to be presented under Routines",
+    field_type = "string"
+  ),
+  "goal": SchemaField(
+    description = "Sentence describing the generated goal",
+    guidelines = "Should be in line with the chosen routine",
+    field_type = "string"
+  )
+}
+
+
 #---------------------------
 
 STANDARD_PLANNING_INSTRUCTIONS = [
@@ -21,70 +44,74 @@ STANDARD_PLANNING_INSTRUCTIONS = [
   "All information used on planning will be pulled from this message."
 ]
 PLAN_SCHEMA = {
-      "plan_steps": SchemaField(
-        description = "List of sequencial steps that make up the plan.",
-        guidelines = "Should have at most 5 items. Each item follows the Step Schema.",
-        field_type = "list"
-      )
-    }
-PLAN_AUX_SCHEMAS = {
-    "Step": {
-        "broad_task": SchemaField(
-            description = "Sentence specifying the task for a single step of the plan.",
-            guidelines = "Short sentence, less than 30 words",
-            field_type = "string"
-        )
-    }
+  "plan_steps": SchemaField(
+    description = "List of sequencial steps that make up the plan.",
+    guidelines = "Should have at most 5 items. Each item follows the Step Schema.",
+    field_type = "list"
+  )
 }
+PLAN_AUX_SCHEMAS = {
+  "Step": {
+    "broad_task": SchemaField(
+      description = "Sentence specifying the task for a single step of the plan.",
+      guidelines = "Short sentence, less than 30 words",
+      field_type = "string"
+    )
+  }
+}
+
 
 #---------------------------
 
 STANDARD_GROUNDING_INSTRUCTIONS = [
   "Tool calls can only contain primitive values or references to real entity instances",
   "Do not make up values when filling tool call arguments.",
-  "The generated tool call sequence must end with a call to \"completed_task\""
+  #"The generated tool call sequence must end with a call to \"completed_task\""
 ]
 GROUND_SCHEMA = {
-    "sequencial_actions": SchemaField(
-        description = "Single tool call",
-        guidelines = "Should be the next action to take in a sequence of previous tool calls",
-        field_type = "object"
-    )
+  "sequencial_actions": SchemaField(
+    description = "Single tool call",
+    guidelines = "Should be the next action to take in a sequence of previous tool calls",
+    field_type = "object"
+  )
 }
+
 
 #---------------------------
 
 FOCAL_POINT_SCHEMA = {
-    "focal_points": SchemaField(
-        description = "List of focal points that will be used for memory retrieval.",
-        guidelines = "Each focal point should be a short and semantically meaningful phrase.",
-        field_type = "list"
-    )
+  "focal_points": SchemaField(
+    description = "List of focal points that will be used for memory retrieval.",
+    guidelines = "Each focal point should be a short and semantically meaningful phrase.",
+    field_type = "list"
+  )
 }
 FOCAL_POINT_AUX_SCHEMAS = {
-    "Point": {
-        "key": SchemaField(
-            description = "Semantically meaningful phrase.",
-            guidelines = "Short phrase, than 10 words",
-            field_type = "string"
-        )
-    }
+  "Point": {
+    "key": SchemaField(
+      description = "Semantically meaningful phrase.",
+      guidelines = "Short phrase, than 10 words",
+      field_type = "string"
+    )
+  }
 }
+
 
 #---------------------------
 
 NODE_REQ_SCHEMA = {
-    "node_description": SchemaField(
-        description = "Description of a node",
-        guidelines = "Should only contain information available in the raw node JSON object",
-        field_type = "string"
-    ),
-    "node_poignancy": SchemaField(
-        description = "Poignancy of a node's content",
-        guidelines = "Should be a value between 0 and 100",
-        field_type = "integer"
-    )
+  "node_description": SchemaField(
+    description = "Description of a node",
+    guidelines = "Should only contain information available in the raw node JSON object",
+    field_type = "string"
+  ),
+  "node_poignancy": SchemaField(
+    description = "Poignancy of a node's content",
+    guidelines = "Should be a value between 0 and 100",
+    field_type = "integer"
+  )
 }
+
 
 #---------------------------
 
@@ -105,7 +132,7 @@ DEFAULT_ACTIONS = [
     type = "function",
     function = Function(
       name = "execute_affordance",
-      description = "This action is used to execute an affordance available under Entity Affordances",
+      description = "This action is used to execute an affordance listed under Entity Affordances",
       parameters = Parameters(
         type = "object",
         required = [],
@@ -113,11 +140,30 @@ DEFAULT_ACTIONS = [
           "affordance_id": Property(
             type = "string",
             description = "Id of the affordance to execute"
+          ),
+          "affordance_arguments": Property(
+            type = "list",
+            description = "List of arguments to be passed for affordance execution"
           )
         }
+      )
+    )
+  ),
+  Tool(
+    type = "function",
+    function = Function(
+      name = "idle",
+      description = "This action is called when when other actions are not relevant to progress the current task",
+      parameters = Parameters(
+        type = "object",
+        required = [],
+        properties = {}
       )
     )
   )
 ]
 
-BLOCKING_ACTIONS = []
+
+#---------------------------
+
+STANDARD_MEMORY_SECTIONS = ["core", "tasks_progress"]

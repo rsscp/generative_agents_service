@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
-from persona.aid import Schema, SchemaField, Contract
+from persona.aid import Entity, Routine, Schema, SchemaField, Contract
 from persona.memory_structures.memory_blocks.node import CoreNode
 
 
@@ -22,8 +22,9 @@ class CreateSimResponse(BaseModel):
 
 class CreateAgentRequest(BaseModel):
     agent_id: str
-    goal: str
-    initial_state: Dict[str, Any]
+    state: Dict[str, Any]
+    entities: list[Entity]
+    routines: list[Routine]
 
 
 class PlanningSetupRequest(BaseModel):

@@ -7,7 +7,7 @@ from pydantic import Field
 from typing import Any, Dict, Optional
 from generation.operations.bound_operations import gen_node_poignancy
 from generation.operations.embed_operations import gen_embedding
-from persona.memory_structures.memory_blocks.node import CoreNode, MemoryBatch, Node, RawNode, MemorySection
+from persona.memory_structures.memory_blocks.node import CoreNode, MemoryBatch, MemoryNode, RawNode, MemorySection
 import numpy as np
 import random as rd
 
@@ -15,8 +15,8 @@ from generation.requests import EmbeddingArray
 from utils import prune
 
 
-def node_from_raw(raw_node: RawNode, core_nodes: list[Node], curr_time: float = 0) -> Node: #TODO generate poignancy
-        return Node(CoreNode(
+def node_from_raw(raw_node: RawNode, core_nodes: list[MemoryNode], curr_time: float = 0) -> MemoryNode: #TODO generate poignancy
+        return MemoryNode(CoreNode(
             poignancy = gen_node_poignancy(core_nodes, raw_node.description),
             description = raw_node.description,
             entity_keys = raw_node.entity_keys
@@ -24,7 +24,7 @@ def node_from_raw(raw_node: RawNode, core_nodes: list[Node], curr_time: float = 
 
 
 def node_from_core(core_node: CoreNode, curr_time: float = 0):
-    return Node(core_node, curr_time)
+    return MemoryNode(core_node, curr_time)
 
 
 class MemoryBox:
@@ -41,18 +41,18 @@ class MemoryBox:
                     self.add_core(section_name, raw_node, 0)
 
     
-    def load_batch(self, batch: Dict[str, list[RawNode]], core_nodes: list[Node], curr_time: float = 0):
+    def load_batch(self, batch: Dict[str, list[RawNode]], core_nodes: list[MemoryNode], curr_time: float = 0):
         for sec_name, raw_nodes in batch.items():
             self.load_section(sec_name, raw_nodes, core_nodes, curr_time)
 
 
-    def load_section(self, section: str, raw_nodes: list[RawNode], core_nodes: list[Node], curr_time: float = 0):
+    def load_section(self, section: str, raw_nodes: list[RawNode], core_nodes: list[MemoryNode], curr_time: float = 0):
         for raw_node in raw_nodes:
             new_node = node_from_raw(raw_node, core_nodes, curr_time)
             self.add(section, new_node)
 
 
-    def add(self, section: str, node: Node):
+    def add(self, section: str, node: MemoryNode):
         self.sections[section][str(uuid4())] = node
 
 
@@ -60,16 +60,16 @@ class MemoryBox:
         self.add(section, node_from_core(complete_node, curr_time))
 
 
-    def add_raw(self, section: str, raw_node: RawNode, core_nodes: list[Node], curr_time: float = 0):
+    def add_raw(self, section: str, raw_node: RawNode, core_nodes: list[MemoryNode], curr_time: float = 0):
         node = node_from_raw(raw_node, core_nodes, curr_time)
         self.add(section, node)
 
 
-    def get_by_id(self, section: str, id: str) -> Node:
+    def get_by_id(self, section: str, id: str) -> MemoryNode:
         return self.sections[section][id]
 
 
-    def get_by_index(self, section: str, index: int) -> Optional[Node]:
+    def get_by_index(self, section: str, index: int) -> Optional[MemoryNode]:
         values = self.sections[section].values()
         if index >= len(values):
             return list(values)[index]
@@ -77,12 +77,12 @@ class MemoryBox:
             return None
         
 
-    def get_nodes(self) -> list[Node]:
+    def get_nodes(self) -> list[MemoryNode]:
         return [node for sec in self.sections.values() for node in sec.values()]
         
 
-    def get_rand_nodes(self, examples: int) -> list[Node]:
-        keys: list[Node] = []
+    def get_rand_nodes(self, examples: int) -> list[MemoryNode]:
+        keys: list[MemoryNode] = []
         nodes = [node for sec in self.sections.values() for node in sec.values()]
         left = min(examples, len(nodes))
 
@@ -105,7 +105,7 @@ class MemoryBox:
         touched_threshold: Optional[float] = None,
         poignancy_threshold: Optional[int] = None,
         distance: Optional[float] = None
-    ) -> list[Node]:
+    ) -> list[MemoryNode]:
         values = list(self.sections[section].values())
 
         if cutoff is not None:
@@ -135,7 +135,7 @@ class MemoryBox:
         result: Dict[str, Dict] = {key: {"node": node} for key, node in self.sections[section].items()}
         values = [node for node in self.sections[section].values()]
 
-        def test_nodes(condition_name: str, condition: Callable[[Node], bool]):
+        def test_nodes(condition_name: str, condition: Callable[[MemoryNode], bool]):
             for key, item in result.items():
                 node = item["node"]
                 result[key][condition_name] = condition(node)

@@ -1,7 +1,7 @@
 from typing import Dict, Optional
 
-from persona.aid import Property, Schema, Tool, ToolCall
-from persona.memory_structures.memory_blocks.node import Node
+from persona.aid import Property, Routine, Schema, Tool, ToolCall
+from persona.memory_structures.memory_blocks.node import MemoryNode
 
 import json
 
@@ -102,6 +102,14 @@ def create_tools_sec(tools: Dict[str, Tool]) -> str:
     return result
 
 
+def create_routines_sec(routines: list[Routine]) -> str:
+    result = "# Available Routines"
+    for routine in routines:
+        result += f"{routine.name}: {routine.description}"
+
+    return result
+
+
 def create_goal_sec(goal: str) -> str:
     result = "# Goal\n"
     result += goal + "\n\n"
@@ -109,14 +117,14 @@ def create_goal_sec(goal: str) -> str:
     return result
 
 
-def create_state_sec(state: Dict[str, Dict]) -> str:
+def create_state_sec(state: Dict) -> str:
     result = "# State\n"
     result += json.dumps(state) + "\n\n"
 
     return result
 
 
-def create_memory_sec(memory: list[str]) -> str:
+def create_memory_sec(memory: Dict) -> str:
     result = "# Memory\n"
     result += json.dumps(memory) + "\n\n"
 
@@ -143,7 +151,7 @@ def create_object_sec(object: Dict) -> str:
     return result
 
 
-def create_core_nodes_sec(core_nodes: list[Node]) -> str:
+def create_core_nodes_sec(core_nodes: list[MemoryNode]) -> str:
     result = "# Core Memories"
     result += json.dumps([node.core.description for node in core_nodes])
 

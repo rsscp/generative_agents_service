@@ -32,6 +32,12 @@ def llm_request(
     tools: Optional[list[Tool]] = None,
     model: str = "qwen3.5:4b"
 ):
+    
+    print("System Prompt:")
+    print(system_prompt)
+    print("User Prompt")
+    print(user_prompt)
+
     json_body = {
             "model": model,
             "messages": [

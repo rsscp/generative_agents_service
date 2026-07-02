@@ -15,7 +15,7 @@ class CoreNode(BaseModel):
     entity_keys: set[str]
 
 
-class Node:
+class MemoryNode:
     core: CoreNode
     embedding: EmbeddingArray
     creation_time: float
@@ -48,5 +48,5 @@ class RawNode(BaseModel):
     entity_keys: set[str]
     
 
-MemorySection = Dict[str, Node]
+MemorySection = Dict[str, MemoryNode]
 MemoryBatch = Dict[str, MemorySection]

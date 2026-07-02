@@ -14,7 +14,7 @@ import datetime
 import random
 
 from pydantic import BaseModel, Field
-from persona.memory_structures.memory_blocks.node import CoreNode, Node, RawNode
+from persona.memory_structures.memory_blocks.node import CoreNode, MemoryNode, RawNode
 from standard import DEFAULT_ACTIONS, PLAN_SCHEMA, PLAN_AUX_SCHEMAS, GROUND_SCHEMA, STANDARD_GROUNDING_INSTRUCTIONS, STANDARD_INSTRUCTIONS, STANDARD_PLANNING_INSTRUCTIONS
 
 sys.path.append('../')
@@ -39,7 +39,7 @@ from persona.memory_structures.blackboard import Blackboard
 from persona.memory_structures.recall import Recall
 from api_classes import Contract, SchemaField
 from persona.memory_structures.memory_blocks.memory_box import MemoryBox
-from persona.aid import GroundingSettings, InteractionSettings, PlanStep, PlanningSettings, ReflectionSettings, Schema, Tool, Configuration, SchemaField, ToolCall
+from persona.aid import Entity, GroundingSettings, InteractionSettings, PlanStep, PlanningSettings, ReflectionSettings, Routine, Schema, Tool, Configuration, SchemaField, ToolCall
 
 
 class AgentException(Exception):
@@ -75,14 +75,16 @@ class RepeatedSchemaNames(AgentException):
 
 class Plan:
   
-  def __init__(self):
+  def __init__(self, routine: Routine, goal: str):
     self.lock: Lock = Lock()
 
     self.INVALID_T_INDEX = -1
     self.INITIALIZED_T_INDEX = 0
-    self.INVALID_A_INDEX = -2
-    self.INITIALIZED_A_INDEX = -1
+    self.INVALID_A_INDEX = -1
+    self.INITIALIZED_A_INDEX = 0
     
+    self.routine: Routine = routine
+    self.goal: str = goal
 
     self.steps: list[PlanStep] = []
     self.task_index: int = self.INVALID_T_INDEX
@@ -104,22 +106,30 @@ class Plan:
     return self.action_index == self.INVALID_A_INDEX
   
 
-  def current_task(self) -> Optional[Dict]:
+  def complete_current(self):
     if not self.unplanned():
+      self.steps[self.task_index].complete = True
+
+
+  def current_completed(self) -> bool:
+    if self.unplanned():
+      return False
+    else:
+      return self.steps[self.task_index].complete
+
+
+  def current_task(self) -> Optional[Dict]:
+    if self.unplanned():
       return None
     else:
       return self.steps[self.task_index].task
     
 
   def add_actions(self, actions: list[ToolCall]):
-    if not self.ungrounded():
-      self.steps[self.task_index].actions += actions
+    self.steps[self.task_index].actions += actions
 
 
-  def current_action_sequence(self) -> Optional[list[ToolCall]]:
-    if self.ungrounded():
-      return None
-    else:
+  def current_action_sequence(self) -> list[ToolCall]:
       return self.steps[self.task_index].actions
   
 
@@ -170,6 +180,19 @@ class Plan:
       self.task_index == len(self.steps) - 1
 
     return result
+  
+
+  def advance_task(self):
+    self.task_index += 1
+    self.action_index = self.INVALID_A_INDEX
+
+
+  def advance_action(self, steps=1):
+    self.action_index += steps
+
+
+  def get_action(self):
+    return self.steps[self.task_index].actions[self.action_index]
   
 
   def advance_index(self) -> tuple[bool, Optional[ToolCall], str]:
@@ -236,18 +259,19 @@ class Agent:
 
   def __init__(
     self,
-    goal: str,
     blackboard: Blackboard,
     recall: Recall,
+    routines: list[Routine],
+    plan: Plan,
     settings: AgentSettings
   ):
     self.lock = Lock()
 
-    self.goal = goal
     self.settings = settings
     self.blackboard = blackboard
     self.recall = recall
-    self.plan = Plan()
+    self.routines = routines
+    self.plan = plan
 
     pas_common_keys = \
       set(settings.planning.aux_schemas.keys()) & \
@@ -258,6 +282,9 @@ class Agent:
     else:
       self.settings.planning.aux_schemas = PLAN_AUX_SCHEMAS | settings.planning.aux_schemas
 
+
+  def set_plan(self, routine: Routine, goal: str): #TODO is this the best solution? This trusts that set_plan is called imidietly after create_agent and only then is the agent valid
+    self.plan = Plan(routine, goal)
 
   '''
   def merge_nodes(self, cache: Dict[str, Dict[str, Node]], memory: Dict[str, Dict[str, Node]]) -> list[Node]:
@@ -308,14 +335,17 @@ class AgentSetup:
 
   def __init__(
     self,
-    goal: str,
-    initial_state: Dict[str, Any],
+    state: Dict[str, Any],
+    entities: list[Entity],
+    routines: list[Routine]
   ):
     self.lock = Lock()
-
-    self.goal = goal
-    self.blackboard = Blackboard(initial_state)
+    
+    self.blackboard = Blackboard(state, entities)
     self.recall: Optional[Recall] = None
+    self.routines = routines
+    self.plan: Optional[Plan] = None
+
     self.config: Optional[Configuration] = None
     self.plan_settings: Optional[PlanningSettings] = None
     self.ground_settings: Optional[GroundingSettings] = None
@@ -408,14 +438,19 @@ class AgentSetup:
     )
 
 
+  def set_plan(self, routine: Routine, goal: str):
+    self.plan = Plan(routine, goal)
+
+
   def create_agent(self) -> Agent:
     checks = {
-      "memory": self.recall != None,
-      "configuration": self.config != None,
-      "planning settings": self.plan_settings != None,
-      "grounding settings": self.ground_settings != None,
-      "reflection settings": self.reflect_settings != None,
-      "interaction settings": self.interact_settings != None,
+      "memory": self.recall is not None,
+      "configuration": self.config is not None,
+      "planning settings": self.plan_settings is not None,
+      "grounding settings": self.ground_settings is not None,
+      "reflection settings": self.reflect_settings is not None,
+      "interaction settings": self.interact_settings is not None,
+      "routine and goal selection": self.plan is not None
     }
 
     missing = [k for k, v in checks.items() if v is False]
@@ -428,6 +463,7 @@ class AgentSetup:
     assert self.ground_settings is not None
     assert self.reflect_settings is not None
     assert self.interact_settings is not None
+    assert self.plan is not None
 
     settings = AgentSettings(
       planning = self.plan_settings,
@@ -437,8 +473,9 @@ class AgentSetup:
     )
 
     return Agent(
-      self.goal,
       self.blackboard,
       self.recall,
+      self.routines,
+      self.plan,
       settings
     )

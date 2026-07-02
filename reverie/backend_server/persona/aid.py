@@ -14,7 +14,7 @@ class ActionParam(BaseModel):
 
 
 class Property(BaseModel):
-    type: Literal["string", "integer", "float", "boolean"]
+    type: Literal["string", "integer", "float", "boolean", "object", "list"]
     description: str
 
 
@@ -78,7 +78,18 @@ ReflectionSettings = ExtendedSettings
 InteractionSettings = ExtendedSettings
 
 
+class Affordance:
+    name: str
+    description: str
+    parameters: Property
+
+
 class Entity(BaseModel):
     id: str
     description: str
     affordances: list[str]
+
+
+class Routine(BaseModel):
+    name: str
+    description: str

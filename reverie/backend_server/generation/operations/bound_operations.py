@@ -1,7 +1,7 @@
 import json
 from typing import Dict, Optional
 from generation.requests import llm_request
-from persona.memory_structures.memory_blocks.node import Node, RawNode
+from persona.memory_structures.memory_blocks.node import MemoryNode, RawNode
 from generation.prompt_building import create_core_nodes_sec, create_instructions_sec, create_mainschema_sec, create_object_sec, create_task_sec
 from persona.aid import Schema
 from standard import NODE_REQ_SCHEMA
@@ -15,7 +15,7 @@ def create_node_req_prompt(
     task: str,
     instructions: Optional[list[str]] = None,
     object: Optional[Dict] = None,
-    core_nodes: Optional[list[Node]] = None,
+    core_nodes: Optional[list[MemoryNode]] = None,
     schema: Optional[Schema] = None
 ): #TODO CONTINUE
     system_prompt = ""
@@ -44,7 +44,7 @@ def clean_up_node_poignancy(response_string: str) -> int:
     return int(response_string)
 
 
-def gen_node_poignancy(core_nodes: list[Node], description: str) -> int: #TODO
+def gen_node_poignancy(core_nodes: list[MemoryNode], description: str) -> int: #TODO
     system_prompt, user_prompt = create_node_req_prompt(
         instructions = [
             "Your response will be a single integer, between 0 and 100, which reflects the importance ",
@@ -92,7 +92,7 @@ def create_node_description_prompt(
 def create_node_poignancy_prompt(
     task: str,
     instructions: Optional[list[str]] = None,
-    core_nodes: Optional[list[Node]] = None
+    core_nodes: Optional[list[MemoryNode]] = None
 ):
     system_prompt = ""
     user_prompt = ""

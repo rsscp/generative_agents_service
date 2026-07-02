@@ -4,6 +4,7 @@ from global_methods import *
 from persona.aid import Configuration, Entity
 from persona.cognitive_modules.reflect_ops import feed_event
 from generation.requests import embedding_request
+from persona.memory_structures.memory_blocks.node import MemoryNode
 from utils import *
 from maze import *
 
@@ -15,7 +16,7 @@ from simulation import Simulation
 from persona.agent import AgentSetup, MissingAgentRequirements, RepeatedSchemaNames
 
 from typing import Dict
-from persona.cognitive_modules.plan_ops import op_plan_full, op_plan, op_ground
+from persona.cognitive_modules.plan_ops import op_plan_full, op_plan, op_ground, op_select_routine, op_select_routine_setup
 from persona.aid import Tool, PlanStep, ToolCall
 
 
@@ -24,7 +25,7 @@ jobs = {}
 sim: Simulation = Simulation("only_sim") #TODO change if later more simultaneous sims are allowed 
 
 
-# API enpoints
+# Setup/Creation requests
 
 @app.post("/simulation", response_model=CreateSimResponse) #TODO only relevant if multiple simultaneous sims are allowed
 def create_sim(request: CreateSimRequest):
@@ -34,8 +35,9 @@ def create_sim(request: CreateSimRequest):
 @app.post("/simulation/agents", response_model=str)
 def create_agent(request: CreateAgentRequest):
     sim.add_agent_setup(request.agent_id, AgentSetup(
-        request.goal,
-        request.initial_state
+        request.state,
+        request.entities,
+        request.routines
     ))
     return "ok"
 
@@ -101,6 +103,7 @@ def setup_agent_interaction(agent_id: str, request: InteractionSetupRequest):
 def finilaze_agent(agent_id: str):
     response = {}
     try:
+        op_select_routine_setup(sim.agents_setup[agent_id])
         sim.add_agent(agent_id)
         response["result"] = "success"
         return response
@@ -114,6 +117,9 @@ def finilaze_agent(agent_id: str):
         response["reason"] = error.reason
         response["repeated_schema_names"] = error.repeated_names
         raise HTTPException(status_code=422, detail=response)
+    
+
+# Direct Requests
 
 
 @app.post("/simulation/agents/{agent_id}/plan", response_model=str)
@@ -129,6 +135,25 @@ def grounded_request(agent_id: str):
     return "ok"
 
 
+@app.post("/simulation/agents/{agent_id}/plan_all", response_model=str)
+def plan_all_request(agent_id: str, background_tasks: BackgroundTasks):
+    background_tasks.add_task(
+        op_plan_full,
+        sim.get_agent(agent_id)
+    )
+    return "ok"
+
+
+# Feedback requests
+
+
+@app.post("/simulation/agents/{agent_id}/feed_event", response_model=str)
+def update_state_request(agent_id: str, request: EventRequest):
+    agent = sim.get_agent(agent_id)
+    #feed_event(agent, request.event) TODO FIX
+    return "ok"
+
+
 @app.post("/simulation/agents/{agent_id}/feed_event", response_model=str)
 def feed_event_request(agent_id: str, request: EventRequest):
     agent = sim.get_agent(agent_id)
@@ -139,19 +164,24 @@ def feed_event_request(agent_id: str, request: EventRequest):
 @app.post("/simulation/agents/{agent_id}/next_action", response_model=ToolCall)
 def next_action(agent_id: str):
     agent = sim.get_agent(agent_id)
-    action = agent.plan.next_action()
+
+    if agent.plan.unplanned():
+        op_plan(agent)
+    elif agent.plan.current_completed():
+        old_task = agent.plan.current_task()
+        assert old_task is not None
+        agent.recall.add_task_progress(old_task["broad_task"])
+        agent.plan.advance_task()
+
+    op_ground(agent)
+    action = agent.plan.get_action()
+
     if action is None:
         raise HTTPException(status_code=404, detail="No next action available")
     return action
 
 
-@app.post("/simulation/agents/{agent_id}/plan_all", response_model=str)
-def plan_all_request(agent_id: str, background_tasks: BackgroundTasks):
-    background_tasks.add_task(
-        op_plan_full,
-        sim.get_agent(agent_id)
-    )
-    return "ok"
+# Getter requests
 
 
 @app.get("/simulation/agents/{agent_id}/tools", response_model=list[Tool])
@@ -172,6 +202,17 @@ def get_actions(agent_id: str):
     return []
 
 
+@app.get("/simulation/agents/{agent_id}/routine_goal", response_model=Dict)
+def get_routine_goal(agent_id: str):
+    return {
+        "routine": sim.get_agent(agent_id).plan.routine,
+        "goal": sim.get_agent(agent_id).plan.goal
+    }
+
+
+# Debug Requests
+
+
 @app.get("/simulation/agents/{agent_id}/debug/cache", response_model=Dict[str, Dict[str, CoreNode]])
 def debug_cache(agent_id: str):
     cache = sim.get_agent(agent_id).recall.cache
@@ -184,21 +225,10 @@ def debug_load_cache(agent_id: str, request: LoadCacheDebugRequest):
     return sim.get_agent(agent_id).recall.load_cache_debug(request.subject)
 
 
+# Test requests
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-@app.post("/simulation/agents/{agent_id}/test/push_entities", response_model=str)
-def test_push_entities(agent_id: str, request: list[Entity]):
-    sim.get_agent(agent_id).blackboard.attended_entities += request
+@app.post("/simulation/agents/{agent_id}/test/set_entities", response_model=str)
+def test_set_entities(agent_id: str, request: Dict[str, Entity]):
+    sim.get_agent(agent_id).blackboard.attended_entities = request
     return "ok"
