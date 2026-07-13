@@ -3,9 +3,14 @@ from fastapi import HTTPException
 from numpy.typing import NDArray
 
 from persona.aid import Tool
+from utils import prompt_log_counter
 
 import numpy as np
 import requests
+
+import json
+
+
 EmbeddingArray = NDArray[np.float32]
 
 
@@ -32,11 +37,19 @@ def llm_request(
     tools: Optional[list[Tool]] = None,
     model: str = "qwen3.5:4b"
 ):
-    
-    print("System Prompt:")
-    print(system_prompt)
-    print("User Prompt")
-    print(user_prompt)
+    global prompt_log_counter
+
+    from pathlib import Path
+    output_file = Path(f"service_logs/{prompt_log_counter}")
+    output_file.mkdir(exist_ok=True, parents=True)
+
+    with open(f'service_logs/{prompt_log_counter}/system_prompt.txt', 'w') as f:
+        f.write(system_prompt)
+    with open(f'service_logs/{prompt_log_counter}/user_prompt.txt', 'w') as f:
+        f.write(user_prompt)
+
+    with open("example.txt", "w") as file:
+        file.write("Hello, world!")
 
     json_body = {
             "model": model,
@@ -51,11 +64,16 @@ def llm_request(
                 }
             ],
             "stream": False,
-            "think": False
+            "think": False,
         }
 
     if tools is not None:
         json_body["tools"] = [tool.dict() for tool in tools]
+
+        with open(f'service_logs/{prompt_log_counter}/tools.txt', 'w') as f:
+            f.write(json.dumps([t.dict() for t in tools], indent=4))
+
+    prompt_log_counter += 1
 
     response = requests.post(
         "http://localhost:11434/api/chat",

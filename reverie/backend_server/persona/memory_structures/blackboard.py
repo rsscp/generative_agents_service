@@ -43,8 +43,8 @@ class Blackboard:
 
     # Reflection
     self.reflection_config = ReflectionConfig()
-    self.importance_accumulator = 0.0
-    self.events_since_reflection = 0
+    self.importance_accumulator: int = 100
+    self.events_since_reflection: int = 0
     '''
     self.recency_w = 1
     self.relevance_w = 1

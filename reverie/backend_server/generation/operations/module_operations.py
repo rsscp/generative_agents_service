@@ -1,6 +1,7 @@
-from persona.aid import Routine, Schema, ToolCall
+from persona.aid import AgentRoutine, Schema, ToolCall
 from generation.prompt_building import create_affordances_sec, create_auxschemas_sec, create_goal_sec, create_instructions_sec, create_mainschema_sec, create_memory_sec, create_routines_sec, create_state_sec, create_task_sec, create_entities_sec
 from generation.requests import llm_request
+from persona.memory_structures.memory_blocks.node import CoreNode
 from standard import FOCAL_POINT_SCHEMA, FOCAL_POINT_AUX_SCHEMAS, ROUTINE_SELECTION_SCHEMA
 from persona.agent import Agent
 from typing import Dict, Optional, Any
@@ -63,7 +64,7 @@ def gen_grounding(
 
 
 def gen_routine_selection(
-    routines: list[Routine],
+    routines: list[AgentRoutine],
     relevant_state: Dict,
     relevant_memory: Dict,
 ):
@@ -72,7 +73,7 @@ def gen_routine_selection(
         memory = relevant_memory,
         routines = routines,
         main_schema = ROUTINE_SELECTION_SCHEMA,
-        task = "Generate the next tool call in a sequence of tool calls to complete the given task"
+        task = "Select a routine and generate a fitting goal"
     )
     response = llm_request(
         system_prompt = system_prompt,
@@ -104,6 +105,29 @@ def gen_focal_points(
     )["message"]["content"]
 
     return clean_up_focal_points(response)
+
+
+def gen_thought(
+    agent: Agent,
+    relevant_state: Dict,
+    relevant_memory: Dict,
+    entities: list[Dict]
+):
+    system_prompt, user_prompt = create_standard_prompt(
+        state = relevant_state,
+        memory = relevant_memory,
+        entities = entities,
+        instructions = agent.settings.reflection.instructions,
+        main_schema = agent.settings.reflection.main_schema,
+        #aux_schemas = agent.settings.reflection.aux_schemas,
+        task = "Make a thought."
+    )
+    response = llm_request(
+        system_prompt = system_prompt,
+        user_prompt = user_prompt,
+    )["message"]["content"]
+
+    return clean_up_thought(response)
 
 
 def clean_up_plan(response_string: str) -> Dict:
@@ -140,12 +164,25 @@ def clean_up_routine_selection(response_string) -> tuple[str, str]:
     return clean_json["routine_choice"], clean_json["goal"]
 
 
+def clean_up_thought(response_string: str) -> CoreNode:
+    start = response_string.find('{')
+    end = response_string.rfind('}') + 1
+    clean_string = response_string[start:end]
+    jsonObj = json.loads(clean_string)
+
+    return CoreNode(
+        poignancy = jsonObj["thought_poignancy"],
+        description = jsonObj["thought_description"],
+        entity_keys = jsonObj["entities_mentioned"]
+    )
+
+
 def create_standard_prompt(
     task: str,
     instructions: Optional[list[str]] = None,
     main_schema: Optional[Schema] = None,
     aux_schemas: Optional[Dict[str, Schema]] = None,
-    routines: Optional[list[Routine]] = None,
+    routines: Optional[list[AgentRoutine]] = None,
     goal: Optional[str] = None,
     state: Optional[Dict] = None,
     memory: Optional[Dict] = None,

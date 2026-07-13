@@ -1,8 +1,10 @@
+from inspect import Parameter
+
 from selenium import webdriver
 
 from global_methods import *
-from persona.aid import Configuration, Entity
-from persona.cognitive_modules.reflect_ops import feed_event
+from persona.aid import Configuration, Entity, Function, Parameters, Property, ToolSimplified
+from persona.cognitive_modules.reflect_ops import op_feed_event
 from generation.requests import embedding_request
 from persona.memory_structures.memory_blocks.node import MemoryNode
 from utils import *
@@ -23,6 +25,11 @@ from persona.aid import Tool, PlanStep, ToolCall
 app = FastAPI()
 jobs = {}
 sim: Simulation = Simulation("only_sim") #TODO change if later more simultaneous sims are allowed 
+
+
+import os 
+dir_path = os.path.dirname(os.path.realpath(__file__))
+print(dir_path)
 
 
 # Setup/Creation requests
@@ -58,8 +65,21 @@ def setup_agent_memory(agent_id: str, request: SetMemoryRequest):
 
 
 @app.post("/simulation/agents/{agent_id}/setup/tools", response_model=str)
-def setup_agent_tools(agent_id: str, request: list[Tool]):
-    sim.agents_setup[agent_id].set_tools(request)
+def setup_agent_tools(agent_id: str, request: Dict[str, ToolSimplified]):
+    processed = [Tool(
+        function = Function(
+            name = tool.name,
+            description = tool.description,
+            parameters = Parameters(
+                required = [key for key, arg in tool.arguments.items()],
+                properties = {key: Property(
+                    type = arg.type,
+                    description = arg.description
+                ) for key, arg in tool.arguments.items()}
+            )
+        )
+    ) for tool in request.values()]
+    sim.agents_setup[agent_id].set_tools(processed)
     return "ok"
 
 
@@ -147,38 +167,50 @@ def plan_all_request(agent_id: str, background_tasks: BackgroundTasks):
 # Feedback requests
 
 
-@app.post("/simulation/agents/{agent_id}/feed_event", response_model=str)
-def update_state_request(agent_id: str, request: EventRequest):
+@app.post("/simulation/agents/{agent_id}/feedback", response_model=str)
+def feeback_request(agent_id: str, request: FeedbackRequest):
     agent = sim.get_agent(agent_id)
-    #feed_event(agent, request.event) TODO FIX
+
+    agent.blackboard.state = request.state
+    agent.blackboard.attended_entities = {entity.id: entity for entity in request.entities}
+
+    op_feed_event(agent, RawNode(
+        description = request.event.description,
+        entity_keys = request.event.entity_keys
+    ))
+    
     return "ok"
 
 
-@app.post("/simulation/agents/{agent_id}/feed_event", response_model=str)
-def feed_event_request(agent_id: str, request: EventRequest):
-    agent = sim.get_agent(agent_id)
-    #feed_event(agent, request.event) TODO FIX
-    return "ok"
-
-
-@app.post("/simulation/agents/{agent_id}/next_action", response_model=ToolCall)
+@app.post("/simulation/agents/{agent_id}/next_action", response_model=NextActionResponse)
 def next_action(agent_id: str):
     agent = sim.get_agent(agent_id)
+    old_task = agent.plan.current_task()
 
-    if agent.plan.unplanned():
+    if old_task is None:
         op_plan(agent)
-    elif agent.plan.current_completed():
-        old_task = agent.plan.current_task()
-        assert old_task is not None
-        agent.recall.add_task_progress(old_task["broad_task"])
-        agent.plan.advance_task()
-
     op_ground(agent)
+    
     action = agent.plan.get_action()
+    is_affordance = action.key == "execute_affordance"
+    tool_call = action
+    target_entity_id = None
 
-    if action is None:
-        raise HTTPException(status_code=404, detail="No next action available")
-    return action
+    if is_affordance:
+        parts = str(action.arguments["affordance_id"]).split(".")
+        target_entity_id = parts[0]
+        tool_call = ToolCall(
+            key = parts[1],
+            arguments = action.arguments
+        )
+
+    response = NextActionResponse(
+        tool_call = tool_call,
+        is_affordance = is_affordance,
+        target_entity_id = target_entity_id
+    )
+
+    return response
 
 
 # Getter requests

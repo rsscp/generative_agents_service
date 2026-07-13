@@ -39,7 +39,7 @@ from persona.memory_structures.blackboard import Blackboard
 from persona.memory_structures.recall import Recall
 from api_classes import Contract, SchemaField
 from persona.memory_structures.memory_blocks.memory_box import MemoryBox
-from persona.aid import Entity, GroundingSettings, InteractionSettings, PlanStep, PlanningSettings, ReflectionSettings, Routine, Schema, Tool, Configuration, SchemaField, ToolCall
+from persona.aid import Entity, GroundingSettings, InteractionSettings, PlanStep, PlanningSettings, ReflectionSettings, AgentRoutine, Schema, Tool, Configuration, SchemaField, ToolCall
 
 
 class AgentException(Exception):
@@ -75,7 +75,7 @@ class RepeatedSchemaNames(AgentException):
 
 class Plan:
   
-  def __init__(self, routine: Routine, goal: str):
+  def __init__(self, routine: AgentRoutine, goal: str):
     self.lock: Lock = Lock()
 
     self.INVALID_T_INDEX = -1
@@ -83,7 +83,7 @@ class Plan:
     self.INVALID_A_INDEX = -1
     self.INITIALIZED_A_INDEX = 0
     
-    self.routine: Routine = routine
+    self.routine: AgentRoutine = routine
     self.goal: str = goal
 
     self.steps: list[PlanStep] = []
@@ -261,7 +261,7 @@ class Agent:
     self,
     blackboard: Blackboard,
     recall: Recall,
-    routines: list[Routine],
+    routines: list[AgentRoutine],
     plan: Plan,
     settings: AgentSettings
   ):
@@ -283,7 +283,7 @@ class Agent:
       self.settings.planning.aux_schemas = PLAN_AUX_SCHEMAS | settings.planning.aux_schemas
 
 
-  def set_plan(self, routine: Routine, goal: str): #TODO is this the best solution? This trusts that set_plan is called imidietly after create_agent and only then is the agent valid
+  def set_plan(self, routine: AgentRoutine, goal: str): #TODO is this the best solution? This trusts that set_plan is called imidietly after create_agent and only then is the agent valid
     self.plan = Plan(routine, goal)
 
   '''
@@ -337,7 +337,7 @@ class AgentSetup:
     self,
     state: Dict[str, Any],
     entities: list[Entity],
-    routines: list[Routine]
+    routines: list[AgentRoutine]
   ):
     self.lock = Lock()
     
@@ -438,7 +438,7 @@ class AgentSetup:
     )
 
 
-  def set_plan(self, routine: Routine, goal: str):
+  def set_plan(self, routine: AgentRoutine, goal: str):
     self.plan = Plan(routine, goal)
 
 

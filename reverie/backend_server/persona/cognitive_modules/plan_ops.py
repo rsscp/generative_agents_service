@@ -3,58 +3,7 @@ import json
 from persona.agent import Agent, AgentSetup
 from generation.operations.module_operations import gen_plan, gen_grounding, gen_routine_selection
 from persona.aid import PlanStep
-
-
-def get_op_foundations(agent: Agent):
-    core = agent.recall.core
-    cache = agent.recall.cache
-
-    context = {sec_name: [
-        {
-            "memory_description": node.core.description,
-            "importance_percentage": node.core.poignancy 
-        }
-    for node in sec.values()] for sec_name, sec in cache.sections.items()}
-    context["core"] = [
-        {
-            "memory_description": node.core.description,
-            "importance_percentage": node.core.poignancy 
-        }
-    for node in core]
-
-    state = {key: agent.blackboard.state[key] for key in agent.settings.planning.contract.state_keys}
-
-    entities = [{
-        "entity_id": entity.id,
-        "description": entity.description
-    } for entity in agent.blackboard.attended_entities.values()]
-
-    affordances = [{
-        "affordance_id": entity.id + "." + affordance,
-        "description": entity.description,
-        "affected_entity_id": entity.id
-    } for entity in agent.blackboard.attended_entities.values()
-      for affordance in entity.affordances]
-
-    return state, context, entities, affordances
-
-
-def get_op_foundations_setup(agent: AgentSetup):
-    if agent.recall is None:
-        raise Exception("Setup memory before requesting routine selection")
-    if agent.plan_settings is None:
-        raise Exception("Setup planning before requesting routine selection")
-    
-    core = agent.recall.core
-    state = {key: agent.blackboard.state[key] for key in agent.plan_settings.contract.state_keys}
-    context = { "core": [
-        {
-            "memory_description": node.core.description,
-            "importance_percentage": node.core.poignancy 
-        }    
-    for node in core]}
-
-    return state, context
+from persona.cognitive_modules.utils import get_op_foundations, get_op_foundations_setup
 
 
 def op_plan(agent: Agent):
@@ -79,24 +28,32 @@ def op_plan(agent: Agent):
 def op_ground(agent: Agent):
     state, context, entities, affordances = get_op_foundations(agent)
 
+    key = ""
+
     if not agent.plan.unplanned():
-        plan_task = agent.plan.steps[agent.plan.task_index].task 
-        actions_taken = agent.plan.current_action_sequence()
+        while key == "" or key == "completed_task":
+            plan_task = agent.plan.steps[agent.plan.task_index].task 
+            actions_taken = agent.plan.current_action_sequence()
 
-        response = gen_grounding(
-            agent,
-            state,
-            context, 
-            entities, 
-            affordances,
-            plan_task,
-            actions_taken
-        ) #TODO include in gen the logic for this to addon actions instead of generating an entirely new sequence. Or make the agent plan one action at a time, at the request of the client
+            response = gen_grounding(
+                agent,
+                state,
+                context, 
+                entities, 
+                affordances,
+                plan_task,
+                actions_taken
+            ) #TODO include in gen the logic for this to addon actions instead of generating an entirely new sequence. Or make the agent plan one action at a time, at the request of the client
 
-        agent.plan.add_actions(response)
-        agent.plan.advance_action(len(response))
-        if response[-1].key == "completed_task":
-            agent.plan.complete_current()
+            agent.plan.add_actions(response)
+            agent.plan.advance_action(len(response))
+
+            key = response[-1].key
+
+            if key == "completed_task":
+                agent.plan.complete_current()
+                agent.recall.add_task_progress(plan_task["broad_task"])
+                agent.plan.advance_task()
 
 
 def op_select_routine(agent: Agent):

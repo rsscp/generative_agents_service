@@ -1,16 +1,13 @@
 from persona.aid import Property, SchemaField, Tool, Function, Parameters
 
-ENTITY_FENCES = ("*<", ">")
+ENTITY_FENCES = ("*", "*")
 
 #---------------------------
 
 STANDARD_INSTRUCTIONS = [
-  "You response will follow the JSON structure specified in Schema.",
-  "Always comply with JSON formating.",
+  "You response will follow the JSON structure specified in Schema, complying with JSON formatting.",
   "Any text should be written in English",
-  "Reduce thinking to at most two cycles of reflection",
-  f"Entity instances represent places, objects or characters and they are presented in the format {ENTITY_FENCES[0]}entity{ENTITY_FENCES[1]}",
-  f"When referencing an entity instance always use their formated id, such as {ENTITY_FENCES[0]}entity{ENTITY_FENCES[1]}",
+  f"Entity IDs are presented in the format {ENTITY_FENCES[0]}entity{ENTITY_FENCES[1]}",
   "You are only able to reference entity instances that are presented in Entity Instances"
 ]
 
@@ -64,8 +61,7 @@ PLAN_AUX_SCHEMAS = {
 #---------------------------
 
 STANDARD_GROUNDING_INSTRUCTIONS = [
-  "Tool calls can only contain primitive values or references to real entity instances",
-  "Do not make up values when filling tool call arguments.",
+  "String arguments corresponding to entity IDs can only be filled with values from Entity Instances",
   #"The generated tool call sequence must end with a call to \"completed_task\""
 ]
 GROUND_SCHEMA = {
@@ -73,6 +69,38 @@ GROUND_SCHEMA = {
     description = "Single tool call",
     guidelines = "Should be the next action to take in a sequence of previous tool calls",
     field_type = "object"
+  )
+}
+
+
+#---------------------------
+
+STANDARD_REFLECTION_INSTRUCTIONS = [
+  "Generate a single thought object",
+  "Entities can be mentioned in the description of the thought if they are contained in Entity Instances"
+]
+REFLECT_SCHEMA = {
+  "thought": SchemaField(
+    description = "Object representing a thought for this agent",
+    guidelines = "All properties are required",
+    field_type = "object",
+    sub_fields = {
+      "thought_description": SchemaField(
+        description = "Description of the thought deduced recent events and other memories",
+        guidelines = "Should be the next action to take in a sequence of previous tool calls",
+        field_type = "object"
+      ),
+      "thought_poignancy": SchemaField(
+        description = "Poignancy or importance of this thought according to the agent's memory and identity",
+        guidelines = "Must be between 0 and 100",
+        field_type = "integer"
+      ),
+      "entities_mentioned": SchemaField(
+        description = "List of string entity ids",
+        guidelines = "Every entity id in this list must have been mentioned in thought_description",
+        field_type = "list"
+      )
+    }
   )
 }
 
@@ -148,22 +176,10 @@ DEFAULT_ACTIONS = [
         }
       )
     )
-  ),
-  Tool(
-    type = "function",
-    function = Function(
-      name = "idle",
-      description = "This action is called when when other actions are not relevant to progress the current task",
-      parameters = Parameters(
-        type = "object",
-        required = [],
-        properties = {}
-      )
-    )
   )
 ]
 
 
 #---------------------------
 
-STANDARD_MEMORY_SECTIONS = ["core", "tasks_progress"]
+STANDARD_MEMORY_SECTIONS = ["tasks_progress", "events", "thoughts"]

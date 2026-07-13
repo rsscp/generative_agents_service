@@ -47,9 +47,10 @@ def clean_up_node_poignancy(response_string: str) -> int:
 def gen_node_poignancy(core_nodes: list[MemoryNode], description: str) -> int: #TODO
     system_prompt, user_prompt = create_node_req_prompt(
         instructions = [
-            "Your response will be a single integer, between 0 and 100, which reflects the importance ",
-            "Your response will not contain JSON",
+            "Your response will be a single integer, between 0 and 100, which reflects the importance of the information contained in the presented object",
+            "Your response will not contain JSON or aditional text",
         ],
+        core_nodes = core_nodes,
         object = {"description": description},
         task = "Respond with an integer between 0 and 100 representing the overall importance of the object presented as Object."
     )

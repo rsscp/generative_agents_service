@@ -19,7 +19,7 @@ class Property(BaseModel):
 
 
 class Parameters(BaseModel):
-    type: Literal["object"]
+    type: Literal["object"] = "object"
     required: list[str]
     properties: Dict[str, Property]
 
@@ -31,8 +31,19 @@ class Function(BaseModel):
 
 
 class Tool(BaseModel):
-    type: Literal["function"]
+    type: Literal["function"] = "function"
     function: Function
+
+
+class ArgumentSimplified(BaseModel):
+    type: Literal["string", "integer", "float", "boolean"]
+    description: str
+
+
+class ToolSimplified(BaseModel):
+    name: str
+    description: str
+    arguments: Dict[str, ArgumentSimplified]
 
 
 class Configuration(BaseModel): #TODO complete
@@ -78,7 +89,7 @@ ReflectionSettings = ExtendedSettings
 InteractionSettings = ExtendedSettings
 
 
-class Affordance:
+class Affordance(BaseModel):
     name: str
     description: str
     parameters: Property
@@ -90,6 +101,6 @@ class Entity(BaseModel):
     affordances: list[str]
 
 
-class Routine(BaseModel):
+class AgentRoutine(BaseModel):
     name: str
     description: str

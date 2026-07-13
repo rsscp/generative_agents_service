@@ -1,6 +1,6 @@
 from typing import Dict, Optional
 
-from persona.aid import Property, Routine, Schema, Tool, ToolCall
+from persona.aid import Property, AgentRoutine, Schema, Tool, ToolCall
 from persona.memory_structures.memory_blocks.node import MemoryNode
 
 import json
@@ -17,7 +17,7 @@ def create_schema_str(header: str, fields: list[str], schema: Dict) -> str:
     string = f"{header} Fields\n"
     string += "".join([f"- {f}\n" for f in fields])
     string += f"{header} Schema\n"
-    string += json.dumps(schema) + "\n"
+    string += json.dumps(schema, indent=4) + "\n"
     return string
 
 
@@ -67,7 +67,7 @@ def create_tool_schema_str(header: str, args: list[str], schema: Dict) -> str:
     string = f"{header} Arguments\n"
     string += "".join([f"- {f}\n" for f in args]) + "\n"
     string += f"{header} Schema\n"
-    string += json.dumps(schema) + "\n\n"
+    string += json.dumps(schema, indent=4) + "\n\n"
     return string
 
 
@@ -102,10 +102,11 @@ def create_tools_sec(tools: Dict[str, Tool]) -> str:
     return result
 
 
-def create_routines_sec(routines: list[Routine]) -> str:
-    result = "# Available Routines"
-    for routine in routines:
-        result += f"{routine.name}: {routine.description}"
+def create_routines_sec(routines: list[AgentRoutine]) -> str:
+    result = "# Available Routines\n"
+    #for routine in routines:
+    #    result += f"- {routine.name}: {routine.description}"
+    result += json.dumps([r.dict() for r in routines], indent=4) + "\n\n"
 
     return result
 
@@ -119,41 +120,41 @@ def create_goal_sec(goal: str) -> str:
 
 def create_state_sec(state: Dict) -> str:
     result = "# State\n"
-    result += json.dumps(state) + "\n\n"
+    result += json.dumps(state, indent=4) + "\n\n"
 
     return result
 
 
 def create_memory_sec(memory: Dict) -> str:
     result = "# Memory\n"
-    result += json.dumps(memory) + "\n\n"
+    result += json.dumps(memory, indent=4) + "\n\n"
 
     return result
 
 
 def create_entities_sec(entities: list[Dict]):
     result = "# Entity Instances\n"
-    result += json.dumps(entities) + "\n\n"
+    result += json.dumps(entities, indent=4) + "\n\n"
 
     return result
 
 def create_affordances_sec(affordances: list[Dict]):
     result = "# Entity Affordances\n"
-    result += json.dumps(affordances) + "\n\n"
+    result += json.dumps(affordances, indent=4) + "\n\n"
 
     return result
 
 
 def create_object_sec(object: Dict) -> str:
     result = "# Object"
-    result += json.dumps(object) + "\n\n"
+    result += json.dumps(object, indent=4) + "\n\n"
 
     return result
 
 
 def create_core_nodes_sec(core_nodes: list[MemoryNode]) -> str:
     result = "# Core Memories"
-    result += json.dumps([node.core.description for node in core_nodes])
+    result += json.dumps([node.core.description for node in core_nodes], indent=4)
 
     return result
 
@@ -166,7 +167,7 @@ def create_task_sec(
     result = "# Task\n"
 
     if plan_task is not None and actions_taken is not None:
-        result += f"The task being deconstruncted is:\n\t{json.dumps(plan_task)}\n"
-        result += f"The tool calls in this list have already been executed:\n\t{json.dumps([action.dict() for action in actions_taken])}\n"
+        result += f"The task being deconstruncted is:\n{json.dumps(plan_task, indent=4)}\n"
+        result += f"The tool calls in this list have already been executed:\n{json.dumps([action.dict() for action in actions_taken], indent=4)}\n"
 
     return result + task

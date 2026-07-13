@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
-from persona.aid import Entity, Routine, Schema, SchemaField, Contract
-from persona.memory_structures.memory_blocks.node import CoreNode
+from persona.aid import Entity, AgentRoutine, Schema, SchemaField, Contract, ToolCall
+from persona.memory_structures.memory_blocks.node import CoreNode, RawNode
 
 
 # ---------- Simulation ----------
@@ -24,7 +24,7 @@ class CreateAgentRequest(BaseModel):
     agent_id: str
     state: Dict[str, Any]
     entities: list[Entity]
-    routines: list[Routine]
+    routines: list[AgentRoutine]
 
 
 class PlanningSetupRequest(BaseModel):
@@ -77,9 +77,10 @@ class GroundRequest(ProactiveRequest):
     pass
 
 
-class EventRequest(ProactiveRequest):
-    event: str
-    entities_involved: list[str]
+class FeedbackRequest(BaseModel):
+    state: Dict[str, Any]
+    entities: list[Entity]
+    event: RawNode
 
 
 class InteractRequest(ProactiveRequest):
@@ -91,3 +92,12 @@ class InteractRequest(ProactiveRequest):
 
 class LoadCacheDebugRequest(BaseModel):
     subject: str
+
+
+# ---------- Debug Requests ----------
+
+
+class NextActionResponse(BaseModel):
+    tool_call: ToolCall
+    is_affordance: bool
+    target_entity_id: Optional[str] = None

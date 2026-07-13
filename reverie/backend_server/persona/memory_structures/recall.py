@@ -11,6 +11,8 @@ import sys
 
 from pydantic import BaseModel
 
+from standard import STANDARD_MEMORY_SECTIONS
+
 sys.path.append('../../')
 
 import json
@@ -66,7 +68,8 @@ class Recall:
       distance = STANDARD_SEMANTIC_DISTANCE
     )
 
-    node_sections["tasks_progress"] = []
+    for sec_name in STANDARD_MEMORY_SECTIONS:
+      node_sections[sec_name] = []
 
     self.core: list[MemoryNode] = [node_from_core(node) for node in core_nodes]
     self.memory: MemoryBox = MemoryBox(node_sections)

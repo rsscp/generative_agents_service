@@ -7,9 +7,11 @@ Description: This defines the "Reflect" module for generative agents.
 import sys
 from typing import Any, Dict
 
-from generation.operations.module_operations import gen_focal_points
+from generation.operations.module_operations import gen_focal_points, gen_thought
 from persona.agent import Agent
 from persona.cognitive_modules.retrieve_ops import retrieve_request
+from persona.memory_structures.memory_blocks.memory_box import node_from_raw
+from persona.memory_structures.memory_blocks.node import RawNode
 sys.path.append('../../')
 
 import datetime
@@ -23,33 +25,43 @@ from persona.prompt_template.run_gpt_prompt import *
 from persona.prompt_template.gpt_structure import *
 from persona.cognitive_modules.retrieve import *
 
+from persona.cognitive_modules.utils import get_op_foundations, get_op_foundations_setup
 
-def feed_event(agent: Agent, event: Dict[str, Any], event_weight: float = 1.0): #TODO make this call methods that lock shared resources
-  if "events" not in agent.recall.cache.section_keys():
-    agent.blackboard.cache.g["events"] = []
-  agent.blackboard.cache["events"].append(event)
-  process_event(agent, event_weight)
 
-def process_event(agent: Agent, event_weight: float):
-  agent.blackboard.importance_accumulator += event_weight
+def op_feed_event(agent: Agent, event: RawNode): #TODO make this call methods that lock shared resources
+  node = node_from_raw(event, agent.recall.core)
+  print(f"HELLLLLOOOOO >>> {event.description}")
+  agent.recall.cache.add("events", node)
+  process_event(agent, node.core.poignancy)
+
+
+def process_event(agent: Agent, event_poignancy: int):
+  agent.blackboard.importance_accumulator -= event_poignancy
   agent.blackboard.events_since_reflection += 1
 
   if should_reflect(agent):
     reflect(agent)
     reset_reflection(agent)
 
+
 def should_reflect(agent: Agent) -> bool:
   return agent.blackboard.importance_accumulator >= agent.blackboard.reflection_config.importance_threshold
 
+
 def reset_reflection(agent: Agent):
-  agent.blackboard.importance_accumulator = 0.0
+  agent.blackboard.importance_accumulator = 100
   agent.blackboard.events_since_reflection = 0
 
+
 def reflect(agent: Agent):
-  contract = agent.settings.planning.contract
-  relevant_state, relevant_memory = agent.get_relevant_pieces(contract)
-
-  focal_points = gen_focal_points(agent, relevant_state, relevant_memory, length=3)
-  retrieved = retrieve_request(agent, focal_points) #TODO make new retrieve on retrieve_alt.py
-
-  #TODO complete reflect, make it get recent memories, actually call LLM for reflection, store thoughts, ...
+  state, context, entities, *_ = get_op_foundations(agent)
+  
+  response = gen_thought(
+    agent,
+    state,
+    context,
+    entities
+  )
+  
+  agent.recall.memory.add_core("thoughts", response)
+  agent.recall.cache.add_core("thoughts", response)
