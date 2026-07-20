@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Dict, Literal, Any
+from typing import Dict, Literal, Any, Optional
 
 
 class Contract(BaseModel):
@@ -7,15 +7,23 @@ class Contract(BaseModel):
     memory_keys: list[str]
 
 
-class ActionParam(BaseModel):
+class ArgumentSimplified(BaseModel):
     type: Literal["string", "integer", "float", "boolean", "object", "list"]
+    tags: list[str] = []
     description: str
-    restrictions: list[str]
+
+
+class ToolSimplified(BaseModel):
+    name: str
+    description: str
+    arguments: Dict[str, ArgumentSimplified]
 
 
 class Property(BaseModel):
-    type: Literal["string", "integer", "float", "boolean", "object", "list"]
+    type: Literal["string", "integer", "float", "boolean", "object", "list"]    
     description: str
+    enum: Optional[list[str]] = None
+    tags: list[str]
 
 
 class Parameters(BaseModel):
@@ -34,16 +42,20 @@ class Tool(BaseModel):
     type: Literal["function"] = "function"
     function: Function
 
-
-class ArgumentSimplified(BaseModel):
-    type: Literal["string", "integer", "float", "boolean"]
-    description: str
-
-
-class ToolSimplified(BaseModel):
-    name: str
-    description: str
-    arguments: Dict[str, ArgumentSimplified]
+    @staticmethod
+    def create(tool: ToolSimplified) -> "Tool":
+        return Tool(function = Function(
+            name = tool.name,
+            description = tool.description,
+            parameters = Parameters(
+                required = [key for key, arg in tool.arguments.items()],
+                properties = {key: Property(
+                    type = arg.type,
+                    tags = arg.tags,
+                    description = arg.description
+                ) for key, arg in tool.arguments.items()}
+            )
+        ))
 
 
 class Configuration(BaseModel): #TODO complete
@@ -79,7 +91,6 @@ class SimpleSettings(BaseModel):
 
 
 class ExtendedSettings(SimpleSettings):
-    main_schema: Schema
     aux_schemas: Dict[str, Schema]
 
 
@@ -87,7 +98,7 @@ PlanningSettings = ExtendedSettings
 GroundingSettings = SimpleSettings
 ReflectionSettings = ExtendedSettings
 InteractionSettings = ExtendedSettings
-
+RoutineGoalSelectionSettings = SimpleSettings
 
 class Affordance(BaseModel):
     name: str
@@ -97,6 +108,7 @@ class Affordance(BaseModel):
 
 class Entity(BaseModel):
     id: str
+    tags: list[str]
     description: str
     affordances: list[str]
 

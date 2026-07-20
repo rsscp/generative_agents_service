@@ -87,9 +87,42 @@ class Plan:
     self.goal: str = goal
 
     self.steps: list[PlanStep] = []
+    self.log_steps: list[PlanStep] = []
+    self.log_actions: list[ToolCall] = []
     self.task_index: int = self.INVALID_T_INDEX
     self.action_index: int = self.INVALID_A_INDEX
     self.advance_lock: bool = False
+
+
+  def enqueue_steps(self, steps: list[PlanStep]):
+    self.steps += steps
+
+  def enqueue_actions(self, actions: list[ToolCall]):
+    self.steps[0].actions += actions
+
+  def dequeue_action(self) -> tuple[str, Optional[ToolCall]]:
+    if len(self.steps) == 0:
+      return "needs_plan", None
+    elif len(self.steps[0].actions) == 0:
+      return "needs_ground", None
+    elif self.steps[0].actions[0].key == "completed_task":
+      self.log_steps.append(PlanStep(
+        task = self.steps[0].task,
+        actions = self.log_actions,
+        complete = False
+      ))
+      self.log_actions = []
+      
+      self.steps.pop(0)
+
+      return self.dequeue_action()
+    else:
+      self.log_actions.append(self.steps[0].actions[0])
+
+      action = self.steps[0].actions[0]
+      self.steps[0].actions.pop(0)
+
+      return "ok", action
 
 
   def reset_index(self):
@@ -118,11 +151,8 @@ class Plan:
       return self.steps[self.task_index].complete
 
 
-  def current_task(self) -> Optional[Dict]:
-    if self.unplanned():
-      return None
-    else:
-      return self.steps[self.task_index].task
+  def current_task(self) -> Dict[str, Any]:
+      return self.steps[0].task
     
 
   def add_actions(self, actions: list[ToolCall]):

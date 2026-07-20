@@ -21,39 +21,24 @@ def op_plan(agent: Agent):
         entities
     )
     
-    agent.plan.steps = [PlanStep(task=step) for step in response["plan_steps"]]
-    agent.plan.advance_task()
+    agent.plan.enqueue_steps([PlanStep(task=step) for step in response["plan_steps"]])
 
 
 def op_ground(agent: Agent):
     state, context, entities, affordances = get_op_foundations(agent)
 
-    key = ""
+    plan_task = agent.plan.current_task() 
 
-    if not agent.plan.unplanned():
-        while key == "" or key == "completed_task":
-            plan_task = agent.plan.steps[agent.plan.task_index].task 
-            actions_taken = agent.plan.current_action_sequence()
+    response = gen_grounding(
+        agent,
+        state,
+        context, 
+        entities, 
+        affordances,
+        plan_task
+    ) #TODO include in gen the logic for this to addon actions instead of generating an entirely new sequence. Or make the agent plan one action at a time, at the request of the client
 
-            response = gen_grounding(
-                agent,
-                state,
-                context, 
-                entities, 
-                affordances,
-                plan_task,
-                actions_taken
-            ) #TODO include in gen the logic for this to addon actions instead of generating an entirely new sequence. Or make the agent plan one action at a time, at the request of the client
-
-            agent.plan.add_actions(response)
-            agent.plan.advance_action(len(response))
-
-            key = response[-1].key
-
-            if key == "completed_task":
-                agent.plan.complete_current()
-                agent.recall.add_task_progress(plan_task["broad_task"])
-                agent.plan.advance_task()
+    agent.plan.enqueue_actions(response)
 
 
 def op_select_routine(agent: Agent):

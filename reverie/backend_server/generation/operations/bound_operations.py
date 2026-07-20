@@ -44,7 +44,7 @@ def clean_up_node_poignancy(response_string: str) -> int:
     return int(response_string)
 
 
-def gen_node_poignancy(core_nodes: list[MemoryNode], description: str) -> int: #TODO
+def gen_node_poignancy(core_nodes: list[MemoryNode], description: str) -> int:
     system_prompt, user_prompt = create_node_req_prompt(
         instructions = [
             "Your response will be a single integer, between 0 and 100, which reflects the importance of the information contained in the presented object",
@@ -57,6 +57,7 @@ def gen_node_poignancy(core_nodes: list[MemoryNode], description: str) -> int: #
     response = llm_request(
         system_prompt = system_prompt,
         user_prompt = user_prompt,
+        log_name = "poignancy"
     )["message"]["content"]
 
     return clean_up_node_poignancy(response)

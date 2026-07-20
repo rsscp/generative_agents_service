@@ -22,7 +22,8 @@ def get_op_foundations(agent: Agent):
 
     entities = [{
         "entity_id": entity.id,
-        "description": entity.description
+        "description": entity.description,
+        "tags": entity.tags
     } for entity in agent.blackboard.attended_entities.values()]
 
     affordances = [{

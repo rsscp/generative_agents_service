@@ -166,8 +166,9 @@ def create_task_sec(
 ) -> str:
     result = "# Task\n"
 
-    if plan_task is not None and actions_taken is not None:
+    if plan_task is not None:
         result += f"The task being deconstruncted is:\n{json.dumps(plan_task, indent=4)}\n"
+    if actions_taken is not None:
         result += f"The tool calls in this list have already been executed:\n{json.dumps([action.dict() for action in actions_taken], indent=4)}\n"
 
     return result + task

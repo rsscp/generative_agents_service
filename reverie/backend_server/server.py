@@ -66,19 +66,8 @@ def setup_agent_memory(agent_id: str, request: SetMemoryRequest):
 
 @app.post("/simulation/agents/{agent_id}/setup/tools", response_model=str)
 def setup_agent_tools(agent_id: str, request: Dict[str, ToolSimplified]):
-    processed = [Tool(
-        function = Function(
-            name = tool.name,
-            description = tool.description,
-            parameters = Parameters(
-                required = [key for key, arg in tool.arguments.items()],
-                properties = {key: Property(
-                    type = arg.type,
-                    description = arg.description
-                ) for key, arg in tool.arguments.items()}
-            )
-        )
-    ) for tool in request.values()]
+    print(json.dumps({k: v.dict() for k, v in request.items()}, indent=4)) #TODO DELETE
+    processed = [Tool.create(tool) for tool in request.values()]
     sim.agents_setup[agent_id].set_tools(processed)
     return "ok"
 
@@ -173,6 +162,7 @@ def feeback_request(agent_id: str, request: FeedbackRequest):
 
     agent.blackboard.state = request.state
     agent.blackboard.attended_entities = {entity.id: entity for entity in request.entities}
+    agent.blackboard.update_tool_arguments()
 
     op_feed_event(agent, RawNode(
         description = request.event.description,
@@ -185,13 +175,28 @@ def feeback_request(agent_id: str, request: FeedbackRequest):
 @app.post("/simulation/agents/{agent_id}/next_action", response_model=NextActionResponse)
 def next_action(agent_id: str):
     agent = sim.get_agent(agent_id)
-    old_task = agent.plan.current_task()
+    # old_task = agent.plan.current_task()
 
-    if old_task is None:
-        op_plan(agent)
-    op_ground(agent)
-    
-    action = agent.plan.get_action()
+    # if old_task is None:
+    #     op_plan(agent) 
+    # if agent.plan.get_action() is None:
+    #     op_ground(agent)
+
+    # agent.plan.advance_index()
+    # action = agent.plan.get_action()
+
+    signal, action = "", None
+
+    while signal != "ok" and action is None:
+        signal, action = agent.plan.dequeue_action()
+
+        if signal == "needs_plan":
+            op_plan(agent)
+        elif signal == "needs_ground":
+            op_ground(agent)
+
+    assert(action is not None)
+
     is_affordance = action.key == "execute_affordance"
     tool_call = action
     target_entity_id = None
@@ -223,7 +228,7 @@ def get_tools(agent_id: str):
 
 @app.get("/simulation/agents/{agent_id}/plan", response_model=list[PlanStep])
 def get_plan(agent_id: str):
-    return sim.get_agent(agent_id).plan.steps
+    return sim.get_agent(agent_id).plan.log_steps
 
 
 @app.get("/simulation/agents/{agent_id}/plan/actions", response_model=list[ToolCall])

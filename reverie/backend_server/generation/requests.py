@@ -34,8 +34,9 @@ def embedding_request(string: str) -> EmbeddingArray:
 def llm_request(
     system_prompt: str,
     user_prompt: str,
+    log_name: str,
     tools: Optional[list[Tool]] = None,
-    model: str = "qwen3.5:4b"
+    model: str = "gemma4:e4b"#"qwen3.5:4b"
 ):
     global prompt_log_counter
 
@@ -73,8 +74,6 @@ def llm_request(
         with open(f'service_logs/{prompt_log_counter}/tools.txt', 'w') as f:
             f.write(json.dumps([t.dict() for t in tools], indent=4))
 
-    prompt_log_counter += 1
-
     response = requests.post(
         "http://localhost:11434/api/chat",
         json=json_body,
@@ -82,17 +81,19 @@ def llm_request(
     )
 
     if not response.ok:
-            print("Ollama error status:", response.status_code, flush=True)
-            print("Ollama error body:", response.text, flush=True)
+        print("Ollama error status:", response.status_code, flush=True)
+        print("Ollama error body:", response.text, flush=True)
 
-            raise HTTPException(
-                status_code = 502,
-                detail = {
-                    "error": "ollama_request_failed",
-                    "ollama_status": response.status_code,
-                    "ollama_body": response.text,
-                },
-            )
+        prompt_log_counter += 1
+
+        raise HTTPException(
+            status_code = 502,
+            detail = {
+                "error": "ollama_request_failed",
+                "ollama_status": response.status_code,
+                "ollama_body": response.text,
+            },
+        )
 
     response.raise_for_status()
     data = response.json()
@@ -104,5 +105,15 @@ def llm_request(
 
     print("input tokens:", data["prompt_eval_count"])
     print("output tokens:", data["eval_count"])
+
+    if "content" in data["message"].keys() and data["message"]["content"] != "":
+        with open(f'service_logs/{prompt_log_counter}/{log_name}.txt', 'w') as f:
+            f.write(data["message"]["content"])
+
+    if "tool_calls" in data["message"].keys():
+        with open(f'service_logs/{prompt_log_counter}/tool_calls.txt', 'w') as f:
+            f.write(json.dumps(data["message"]["tool_calls"], indent=4))
+
+    prompt_log_counter += 1
 
     return data

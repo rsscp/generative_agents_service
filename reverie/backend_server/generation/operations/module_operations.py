@@ -2,7 +2,7 @@ from persona.aid import AgentRoutine, Schema, ToolCall
 from generation.prompt_building import create_affordances_sec, create_auxschemas_sec, create_goal_sec, create_instructions_sec, create_mainschema_sec, create_memory_sec, create_routines_sec, create_state_sec, create_task_sec, create_entities_sec
 from generation.requests import llm_request
 from persona.memory_structures.memory_blocks.node import CoreNode
-from standard import FOCAL_POINT_SCHEMA, FOCAL_POINT_AUX_SCHEMAS, ROUTINE_SELECTION_SCHEMA
+from standard import FOCAL_POINT_SCHEMA, FOCAL_POINT_AUX_SCHEMAS, ROUTINE_SELECTION_SCHEMA, STANDARD_INSTRUCTIONS, STANDARD_ROUTINE_SELECTION_INSTRUCTIONS
 from persona.agent import Agent
 from typing import Dict, Optional, Any
 
@@ -30,6 +30,7 @@ def gen_plan(
     response = llm_request(
         system_prompt = system_prompt,
         user_prompt = user_prompt,
+        log_name = "plan"
     )["message"]["content"]
 
     return clean_up_plan(response)
@@ -41,23 +42,25 @@ def gen_grounding(
     relevant_memory: Dict,
     entities: list[Dict],
     affordances: list[Dict],
-    plan_task: Dict[str, Any],
-    actions_taken: list[ToolCall]
+    plan_task: Dict[str, Any]
+    #actions_taken: list[ToolCall]
 ):
     system_prompt, user_prompt = create_standard_prompt(
         state = relevant_state,
         memory = relevant_memory,
         entities = entities,
         affordances = affordances,
+        main_schema = agent.settings.grounding.main_schema,
         instructions = agent.settings.grounding.instructions,
         plan_task = plan_task,
-        actions_taken = actions_taken,
-        task = "Generate the next tool call in a sequence of tool calls to complete the given task"
+        #actions_taken = actions_taken,
+        task = "Generate the next sequence of tool callsin to complete the current task"
     )
     response = llm_request(
         system_prompt = system_prompt,
         user_prompt = user_prompt,
-        tools = agent.blackboard.generic_tools
+        tools = agent.blackboard.generic_tools,
+        log_name = "ground"
     )["message"]["tool_calls"]
 
     return clean_up_ground(response)
@@ -72,12 +75,14 @@ def gen_routine_selection(
         state = relevant_state,
         memory = relevant_memory,
         routines = routines,
+        instructions = STANDARD_INSTRUCTIONS + STANDARD_ROUTINE_SELECTION_INSTRUCTIONS,
         main_schema = ROUTINE_SELECTION_SCHEMA,
         task = "Select a routine and generate a fitting goal"
     )
     response = llm_request(
         system_prompt = system_prompt,
-        user_prompt = user_prompt
+        user_prompt = user_prompt,
+        log_name = "routine_goal"
     )["message"]["content"]
 
     routine_name, goal = clean_up_routine_selection(response) 
@@ -101,7 +106,8 @@ def gen_focal_points(
     )
     response = llm_request(
         system_prompt = system_prompt,
-        user_prompt = user_prompt
+        user_prompt = user_prompt,
+        log_name = "focal_points"
     )["message"]["content"]
 
     return clean_up_focal_points(response)
@@ -125,6 +131,7 @@ def gen_thought(
     response = llm_request(
         system_prompt = system_prompt,
         user_prompt = user_prompt,
+        log_name = "thought"
     )["message"]["content"]
 
     return clean_up_thought(response)

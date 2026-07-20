@@ -60,6 +60,23 @@ class Blackboard:
   def set_tools(self, actions: list[Tool]):
     with self.lock:
       self.generic_tools = actions
+      self.update_tool_arguments()
+
+  def update_tool_arguments(self):
+    properties = [
+      property
+      for tool in self.generic_tools
+      for property in tool.function.parameters.properties.values()
+    ]
+    for p in [p for p in properties if len(p.tags) > 0]:
+      valid_entity_ids = [
+        ent.id
+        for ent in self.attended_entities.values()
+        if len(set(p.tags) & set(ent.tags)) == len(p.tags)
+      ]
+      p.enum = valid_entity_ids
+
+
 
 
   def get_f_daily_schedule_index(self, advance=0):
