@@ -3,7 +3,7 @@ from fastapi import HTTPException
 from numpy.typing import NDArray
 
 from persona.aid import Tool
-from utils import prompt_log_counter
+from utils import prompt_log_counter, run_log_name, log_json, log_text
 
 import numpy as np
 import requests
@@ -33,46 +33,46 @@ def embedding_request(string: str) -> EmbeddingArray:
 
 def llm_request(
     system_prompt: str,
-    user_prompt: str,
+    messages: list[str],
     log_name: str,
     tools: Optional[list[Tool]] = None,
     model: str = "gemma4:e4b"#"qwen3.5:4b"
 ):
     global prompt_log_counter
-
     from pathlib import Path
-    output_file = Path(f"service_logs/{prompt_log_counter}")
+    output_file = Path(f"service_logs/{run_log_name}/{prompt_log_counter}")
     output_file.mkdir(exist_ok=True, parents=True)
 
-    with open(f'service_logs/{prompt_log_counter}/system_prompt.txt', 'w') as f:
-        f.write(system_prompt)
-    with open(f'service_logs/{prompt_log_counter}/user_prompt.txt', 'w') as f:
-        f.write(user_prompt)
+    all_messages = [{
+        "role": "system",
+        "content": system_prompt
+    }]
 
-    with open("example.txt", "w") as file:
-        file.write("Hello, world!")
+    log_text(system_prompt, "m_system", prompt_log_counter)
+
+    role = "assistant"
+    message_counter = 0
+    for m in messages:
+        if role == "user": role = "assistant"
+        else: role = "user"
+        
+        all_messages.append({
+            "role": role,
+            "content": m
+        })
+
+        log_text(m, f"m_{role}_{message_counter}", prompt_log_counter)
 
     json_body = {
             "model": model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": user_prompt
-                }
-            ],
+            "messages": all_messages,
             "stream": False,
             "think": False,
         }
 
     if tools is not None:
         json_body["tools"] = [tool.dict() for tool in tools]
-
-        with open(f'service_logs/{prompt_log_counter}/tools.txt', 'w') as f:
-            f.write(json.dumps([t.dict() for t in tools], indent=4))
+        log_json([t.dict() for t in tools], "tools", prompt_log_counter)
 
     response = requests.post(
         "http://localhost:11434/api/chat",
@@ -98,21 +98,27 @@ def llm_request(
     response.raise_for_status()
     data = response.json()
 
-    print("total:", data["total_duration"] / 1e9)
-    print("load:", data["load_duration"] / 1e9)
-    print("prompt eval:", data["prompt_eval_duration"] / 1e9)
-    print("generation:", data["eval_duration"] / 1e9)
-
-    print("input tokens:", data["prompt_eval_count"])
-    print("output tokens:", data["eval_count"])
+    log_json({
+        "total_time": data["total_duration"] / 1e9,
+        "load_time": data["load_duration"] / 1e9,
+        "prompt_eval_time": data["prompt_eval_duration"] / 1e9,
+        "generation_time": data["eval_duration"] / 1e9,
+        "input tokens": data["prompt_eval_count"],
+        "output tokens": data["eval_count"]
+    }, "ollama_stats", prompt_log_counter)
 
     if "content" in data["message"].keys() and data["message"]["content"] != "":
-        with open(f'service_logs/{prompt_log_counter}/{log_name}.txt', 'w') as f:
-            f.write(data["message"]["content"])
+        start = data["message"]["content"].find('{')
+        end = data["message"]["content"].rfind('}') + 1
+        if start != -1 and end != 0:
+            clean_string = data["message"]["content"][start:end]
+            obj = json.loads(clean_string)
+            log_json(obj, log_name, prompt_log_counter)
+        else:
+            log_text(data["message"]["content"], log_name, prompt_log_counter)
 
     if "tool_calls" in data["message"].keys():
-        with open(f'service_logs/{prompt_log_counter}/tool_calls.txt', 'w') as f:
-            f.write(json.dumps(data["message"]["tool_calls"], indent=4))
+        log_json(data["message"]["tool_calls"], "tool_calls", prompt_log_counter)
 
     prompt_log_counter += 1
 

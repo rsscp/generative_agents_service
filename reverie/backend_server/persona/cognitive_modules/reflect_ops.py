@@ -11,7 +11,7 @@ from generation.operations.module_operations import gen_focal_points, gen_though
 from persona.agent import Agent
 from persona.cognitive_modules.retrieve_ops import retrieve_request
 from persona.memory_structures.memory_blocks.memory_box import node_from_raw
-from persona.memory_structures.memory_blocks.node import RawNode
+from persona.memory_structures.memory_blocks.node import CoreNode, RawNode
 sys.path.append('../../')
 
 import datetime
@@ -63,5 +63,13 @@ def reflect(agent: Agent):
     entities
   )
   
-  agent.recall.memory.add_core("thoughts", response)
-  agent.recall.cache.add_core("thoughts", response)
+  agent.recall.memory.add_core("thoughts", CoreNode(
+    poignancy = response.thought.poignancy,
+    description = response.thought.description,
+    entity_keys = set(response.thought.entities_mentioned)
+  ))
+  agent.recall.cache.add_core("thoughts", CoreNode(
+    poignancy = response.thought.poignancy,
+    description = response.thought.description,
+    entity_keys = set(response.thought.entities_mentioned)
+  ))

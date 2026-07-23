@@ -42,11 +42,11 @@ def get_schema_ready(schema: Schema) -> tuple[list[str], Dict]:
     return field_list, json_schema
 
 
-def create_mainschema_sec(schema: Schema) -> str:
-    result = "# Main Schema\n"
-    fields, schema = get_schema_ready(schema)
-    result += create_schema_str("##", fields, schema)
-    result += "\n"
+def create_mainschema_sec(schema: str) -> str:
+    result = "# Response Schema\n"
+    # fields, schema = get_schema_ready(schema)
+    # result += create_schema_str("##", fields, schema)
+    result += schema + "\n\n"
 
     return result
 
@@ -74,7 +74,7 @@ def create_tool_schema_str(header: str, args: list[str], schema: Dict) -> str:
 def get_tool_schema_ready(tool_name: str, schema: Dict[str, Property]) -> tuple[list[str], Dict]:
     arg_list = []
     json_schema = {
-        "action": tool_name,
+        "name": tool_name,
         "arguments": {}
     }
 
@@ -82,22 +82,36 @@ def get_tool_schema_ready(tool_name: str, schema: Dict[str, Property]) -> tuple[
         arg_item = f"{k}:\n"
         arg_item += f"\t- type: {v.type}\n"
         arg_item += f"\t- description: {v.description}\n"
-        #arg_item += f"\t- restrictions: {v.restrictions}"
         arg_list.append(arg_item)
 
-        json_schema["arguments"][k] = f"<{v.type}>"
+        if v.enum is None:
+            json_schema["arguments"][k] = f"<{v.type}>"
+        else:
+            json_schema["arguments"][k] = f"<enum[{', '.join(v.enum)}]>"
 
     return arg_list, json_schema
 
 
-def create_tools_sec(tools: Dict[str, Tool]) -> str:
+def create_tools_sec(tools: list[Tool]) -> str:
     result = "# Available Tools\n"
 
-    for name, tool in tools.items():
-        result += f"## {name}\n"
-        result += f"{tool.function.description}\n\n"
-        args, schema = get_tool_schema_ready(name, tool.function.parameters.properties)
-        result += create_tool_schema_str("###", args, schema)
+    result += json.dumps([{
+        "name": t.function.name,
+        "description": t.function.description,
+        "arguments": {
+            k: {
+                "type": p.type,
+                "description": p.description,
+                "enum": p.enum
+            }
+        for k, p in t.function.parameters.properties.items()}
+    } for t in tools], indent=4)
+
+    # for tool in tools:
+    #     result += f"## {tool.function.name}\n"
+    #     result += f"{tool.function.description}\n\n"
+    #     args, schema = get_tool_schema_ready(tool.function.name, tool.function.parameters.properties)
+    #     result += create_tool_schema_str("###", args, schema)
 
     return result
 

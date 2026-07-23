@@ -4,7 +4,6 @@ from generation.requests import llm_request
 from persona.memory_structures.memory_blocks.node import MemoryNode, RawNode
 from generation.prompt_building import create_core_nodes_sec, create_instructions_sec, create_mainschema_sec, create_object_sec, create_task_sec
 from persona.aid import Schema
-from standard import NODE_REQ_SCHEMA
 
 
 def clean_up_node_description(response_string: str) -> str:
@@ -16,7 +15,7 @@ def create_node_req_prompt(
     instructions: Optional[list[str]] = None,
     object: Optional[Dict] = None,
     core_nodes: Optional[list[MemoryNode]] = None,
-    schema: Optional[Schema] = None
+    schema: Optional[str] = None
 ): #TODO CONTINUE
     system_prompt = ""
     user_prompt = ""
@@ -56,7 +55,7 @@ def gen_node_poignancy(core_nodes: list[MemoryNode], description: str) -> int:
     )
     response = llm_request(
         system_prompt = system_prompt,
-        user_prompt = user_prompt,
+        messages = [user_prompt],
         log_name = "poignancy"
     )["message"]["content"]
 

@@ -15,7 +15,7 @@ import random
 
 from pydantic import BaseModel, Field
 from persona.memory_structures.memory_blocks.node import CoreNode, MemoryNode, RawNode
-from standard import DEFAULT_ACTIONS, PLAN_SCHEMA, PLAN_AUX_SCHEMAS, GROUND_SCHEMA, STANDARD_GROUNDING_INSTRUCTIONS, STANDARD_INSTRUCTIONS, STANDARD_PLANNING_INSTRUCTIONS
+from standard import DEFAULT_ACTIONS, GROUND_AUX_SCHEMAS, PLAN_SCHEMA, PLAN_AUX_SCHEMAS, GROUND_SCHEMA, STANDARD_GROUNDING_INSTRUCTIONS, STANDARD_INSTRUCTIONS, STANDARD_PLANNING_INSTRUCTIONS, GroundSchema, PlanStepLogSchema
 
 sys.path.append('../')
 
@@ -39,7 +39,7 @@ from persona.memory_structures.blackboard import Blackboard
 from persona.memory_structures.recall import Recall
 from api_classes import Contract, SchemaField
 from persona.memory_structures.memory_blocks.memory_box import MemoryBox
-from persona.aid import Entity, GroundingSettings, InteractionSettings, PlanStep, PlanningSettings, ReflectionSettings, AgentRoutine, Schema, Tool, Configuration, SchemaField, ToolCall
+from persona.aid import Entity, GroundingSequence, GroundingSettings, InteractionSettings, PlanStep, PlanStepLog, PlanningSettings, ReflectionSettings, AgentRoutine, Schema, Tool, Configuration, SchemaField, ToolCall
 
 
 class AgentException(Exception):
@@ -87,8 +87,8 @@ class Plan:
     self.goal: str = goal
 
     self.steps: list[PlanStep] = []
-    self.log_steps: list[PlanStep] = []
-    self.log_actions: list[ToolCall] = []
+    self.log_steps: list[PlanStepLogSchema] = []
+    self.log_task_counter = 0
     self.task_index: int = self.INVALID_T_INDEX
     self.action_index: int = self.INVALID_A_INDEX
     self.advance_lock: bool = False
@@ -105,24 +105,22 @@ class Plan:
       return "needs_plan", None
     elif len(self.steps[0].actions) == 0:
       return "needs_ground", None
-    elif self.steps[0].actions[0].key == "completed_task":
-      self.log_steps.append(PlanStep(
-        task = self.steps[0].task,
-        actions = self.log_actions,
-        complete = False
-      ))
-      self.log_actions = []
-      
+    elif self.steps[0].actions[0].name == "completed_task":
       self.steps.pop(0)
-
       return self.dequeue_action()
     else:
-      self.log_actions.append(self.steps[0].actions[0])
-
       action = self.steps[0].actions[0]
       self.steps[0].actions.pop(0)
-
       return "ok", action
+    
+  def do_log_steps(self, steps: list[PlanStepLogSchema]):
+    self.log_steps += steps
+
+  def do_log_actions(self, actions: GroundSchema):
+    self.log_steps[self.log_task_counter].actions.append(actions)
+
+    if actions.tool_calls[-1].name == "completed_task":
+      self.log_task_counter += 1
 
 
   def reset_index(self):
@@ -191,7 +189,7 @@ class Plan:
 
   def allowed_jump(self) -> bool:
     result = \
-      self.steps[self.task_index].actions[self.action_index].key == "completed_task" and \
+      self.steps[self.task_index].actions[self.action_index].name == "completed_task" and \
       self.task_index + 1 < len(self.steps) and \
       len(self.steps[self.task_index + 1].actions) > 0
 
@@ -206,7 +204,7 @@ class Plan:
   
   def allowed_reset(self) -> bool:
     result = \
-      self.steps[self.task_index].actions[self.action_index].key == "completed_task" and \
+      self.steps[self.task_index].actions[self.action_index].name == "completed_task" and \
       self.task_index == len(self.steps) - 1
 
     return result
@@ -251,7 +249,7 @@ class Plan:
       action = self \
         .steps[task_index] \
         .actions[action_index]
-      key = action.key
+      key = action.name
     
     self.task_index = task_index
     self.action_index = action_index
@@ -431,7 +429,8 @@ class AgentSetup:
           + STANDARD_INSTRUCTIONS \
           + STANDARD_GROUNDING_INSTRUCTIONS,
         contract = contract,
-        main_schema = GROUND_SCHEMA
+        main_schema = GROUND_SCHEMA,
+        aux_schemas = GROUND_AUX_SCHEMAS
       )
 
 

@@ -74,14 +74,25 @@ Schema = Dict[str, SchemaField]
 
 
 class ToolCall(BaseModel):
-    key: str
+    name: str
     arguments: Dict[str, Any] #TODO specific type instead of Any if possible
+
+
+class GroundingSequence(BaseModel):
+    thinking: str
+    tool_calls: list[ToolCall]
+    context_score: int
 
 
 class PlanStep(BaseModel):
     task: Dict
     actions: list[ToolCall] = Field(default_factory=list[ToolCall])
     complete: bool = False
+
+
+class PlanStepLog(BaseModel):
+    task: Dict
+    actions: list[GroundingSequence] = Field(default_factory=list[GroundingSequence])
 
 
 class SimpleSettings(BaseModel):
@@ -95,7 +106,7 @@ class ExtendedSettings(SimpleSettings):
 
 
 PlanningSettings = ExtendedSettings
-GroundingSettings = SimpleSettings
+GroundingSettings = ExtendedSettings
 ReflectionSettings = ExtendedSettings
 InteractionSettings = ExtendedSettings
 RoutineGoalSelectionSettings = SimpleSettings

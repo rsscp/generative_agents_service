@@ -3,7 +3,7 @@ from inspect import Parameter
 from selenium import webdriver
 
 from global_methods import *
-from persona.aid import Configuration, Entity, Function, Parameters, Property, ToolSimplified
+from persona.aid import Configuration, Entity, Function, Parameters, PlanStepLog, Property, ToolSimplified
 from persona.cognitive_modules.reflect_ops import op_feed_event
 from generation.requests import embedding_request
 from persona.memory_structures.memory_blocks.node import MemoryNode
@@ -197,7 +197,7 @@ def next_action(agent_id: str):
 
     assert(action is not None)
 
-    is_affordance = action.key == "execute_affordance"
+    is_affordance = action.name == "execute_affordance"
     tool_call = action
     target_entity_id = None
 
@@ -205,7 +205,7 @@ def next_action(agent_id: str):
         parts = str(action.arguments["affordance_id"]).split(".")
         target_entity_id = parts[0]
         tool_call = ToolCall(
-            key = parts[1],
+            name = parts[1],
             arguments = action.arguments
         )
 
@@ -226,7 +226,7 @@ def get_tools(agent_id: str):
     return sim.get_agent(agent_id).blackboard.generic_tools
 
 
-@app.get("/simulation/agents/{agent_id}/plan", response_model=list[PlanStep])
+@app.get("/simulation/agents/{agent_id}/plan", response_model=list[PlanStepLog])
 def get_plan(agent_id: str):
     return sim.get_agent(agent_id).plan.log_steps
 
@@ -234,7 +234,7 @@ def get_plan(agent_id: str):
 @app.get("/simulation/agents/{agent_id}/plan/actions", response_model=list[ToolCall])
 def get_actions(agent_id: str):
     for step in reversed(sim.get_agent(agent_id).plan.steps):
-        if step.actions and step.actions[-1].key == "completed_task":
+        if step.actions and step.actions[-1].name == "completed_task":
             return step.actions[0:-1]
     return []
 

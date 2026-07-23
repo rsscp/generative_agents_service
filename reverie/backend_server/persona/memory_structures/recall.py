@@ -139,8 +139,17 @@ class Recall:
     node = node_from_raw(RawNode(
       description = task, entity_keys = set()
     ), self.core)
+
     self.memory.add("completed_tasks", node)
     self.cache.add("completed_tasks", node)
+
+  def add_error(self, error: str):
+    node = node_from_raw(RawNode(
+      description = error, entity_keys = set()
+    ), self.core)
+    
+    self.memory.add("errors", node)
+    self.cache.add("errors", node)
 
 
   def update(self, curr_time: float, new_batch: Optional[Dict[str, list[RawNode]]]):

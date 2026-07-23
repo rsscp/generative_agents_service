@@ -1,3 +1,5 @@
+from pydantic import BaseModel, Field
+from typing import Dict, Any
 from persona.aid import Property, SchemaField, Tool, Function, Parameters, ToolSimplified, ArgumentSimplified
 
 ENTITY_FENCES = ("*", "*")
@@ -33,6 +35,10 @@ ROUTINE_SELECTION_SCHEMA = {
   )
 }
 
+class RoutineSelectionSchema(BaseModel):
+    routine_choice: str = Field(description="Name of the chosen routine")
+    goal: str = Field(description="Sentence describing the goal generated according to the selected routine")
+
 
 #---------------------------
 
@@ -49,7 +55,7 @@ PLAN_SCHEMA = {
 }
 PLAN_AUX_SCHEMAS = {
   "Step": {
-    "broad_task": SchemaField(
+    "task": SchemaField(
       description = "Sentence specifying the task for a single step of the plan.",
       guidelines = "Short sentence, less than 30 words",
       field_type = "string"
@@ -62,6 +68,18 @@ PLAN_AUX_SCHEMAS = {
   }
 }
 
+class PlanStepsSchema(BaseModel):
+    broad_task: str = Field(description="Sentence specifying the task for a single step of the plan in less than 30 words")
+    positive_guidelines: list[str] = Field(description="Description list of positive guidelines for this task, what should be generaly persued")
+    negative_guidelines: list[str] = Field(description="Description list of negative guidelines for this task, what should be generaly avoided")
+
+class PlanSchema(BaseModel):
+    plan_steps: list[PlanStepsSchema] = Field(description="List of sequencial logical steps that make up the plan")
+
+class PlanStepLogSchema(BaseModel):
+    task: Dict
+    actions: list["GroundSchema"] = Field(default_factory=list["GroundSchema"])
+
 
 #---------------------------
 
@@ -71,14 +89,50 @@ STANDARD_GROUNDING_INSTRUCTIONS = [
   "If you deduce through the presented memories that the task has been completed already, choose the completed_task tool",
   "You call call a sequence of more than one tool if each call in that sequence doen't rely on feedback from the previous call",
   "Remember to, apart from tool calling, respond using the presented Schema"
+  "Pay special attention too enum values in tool arguments, as argument values outside the enum set will result in failure"
 ]
 GROUND_SCHEMA = {
   "thinking": SchemaField(
-    description = "Text describing the reasoning behind the possible choice of tools",
+    description = "Text describing the reasoning behind the possible choice of actions/tools",
     guidelines = "Should be less than 50 words",
     field_type = "string"
+  ),
+  "tool_calls": SchemaField(
+    description = "Sequence of tool calls to be executed next",
+    guidelines = "The items in this list should comply with the ToolCall schema",
+    field_type = "list"
+  ),
+  "context_score": SchemaField(
+    description = "Sequence of tool calls to be executed next",
+    guidelines = "The items in this list should comply with the ToolCall schema",
+    field_type = "list"
   )
 }
+GROUND_AUX_SCHEMAS = {
+  "ToolCall": {
+    "name": SchemaField(
+      description = "Name of the tool being called",
+      guidelines = "Must correspond to the name of a valid tool",
+      field_type = "string"
+    ),
+    "arguments": SchemaField(
+      description = "Dictionary of arguments for this tool call of which the values comply with the choosen tool",
+      guidelines = "Each argument should be filled in the key value format, using the correct parameter names specified by the tool",
+      field_type = "object"
+    )
+  }
+}
+
+class ToolCallSchema(BaseModel):
+    name: str = Field(description="Name of the tool being called")
+    arguments: Dict[str, Any] = Field(description="Dictionary of arguments for this tool call")
+
+class GroundSchema(BaseModel):
+    thinking: str = Field(description="Small text describing the reasoning behind the possible choice of tools")
+    objectives: list[str] = Field(description="List of small sentences describing real world positive outcomes that are expected from these actions")
+    avoidances: list[str] = Field(description="List of small sentences describing real world consequences being avoided")
+    tool_calls: list[ToolCallSchema] = Field(description="Sequence of tool calls to be executed next")
+    context_score: int = Field(description="Value between 0-100 indicating how appropriate the choosen actions are according to the current context")
 
 
 #---------------------------
@@ -112,6 +166,14 @@ REFLECT_SCHEMA = {
   )
 }
 
+class ThoughtSchema(BaseModel):
+    description: str = Field(description="Description of the thought deduced recent events and other memories")
+    poignancy: int = Field(description="Value between 0-100 that rates the overall importance of this thought object")
+    entities_mentioned: list[str] = Field(description="List of entity string IDs that are mentioned in this thought object")
+
+class ReflectSchema(BaseModel):
+    thought: ThoughtSchema = Field(description="Object representing a thought")
+
 
 #---------------------------
 
@@ -123,30 +185,18 @@ FOCAL_POINT_SCHEMA = {
   )
 }
 FOCAL_POINT_AUX_SCHEMAS = {
-  "Point": {
-    "key": SchemaField(
-      description = "Semantically meaningful phrase.",
-      guidelines = "Short phrase, than 10 words",
-      field_type = "string"
-    )
-  }
-}
-
-
-#---------------------------
-
-NODE_REQ_SCHEMA = {
-  "node_description": SchemaField(
-    description = "Description of a node",
-    guidelines = "Should only contain information available in the raw node JSON object",
+  "key": SchemaField(
+    description = "Generic and semantically meaningful phrase relating to the current goal or task",
+    guidelines = "Short phrase, than 10 words",
     field_type = "string"
-  ),
-  "node_poignancy": SchemaField(
-    description = "Poignancy of a node's content",
-    guidelines = "Should be a value between 0 and 100",
-    field_type = "integer"
   )
 }
+
+class PointSchema(BaseModel):
+    key: str = Field(description="Generic and semantically meaningful phrase relating to the current goal or task")
+
+class FocalPointsSchema(BaseModel):
+    focal_points: list[PointSchema]
 
 
 #---------------------------
@@ -176,4 +226,4 @@ DEFAULT_ACTIONS = [
 
 #---------------------------
 
-STANDARD_MEMORY_SECTIONS = ["completed_tasks", "events", "thoughts"]
+STANDARD_MEMORY_SECTIONS = ["completed_tasks", "events", "thoughts", "errors"]
