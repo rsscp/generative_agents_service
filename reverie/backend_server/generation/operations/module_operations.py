@@ -5,6 +5,7 @@ from persona.memory_structures.memory_blocks.node import CoreNode
 from standard import FOCAL_POINT_SCHEMA, FOCAL_POINT_AUX_SCHEMAS, ROUTINE_SELECTION_SCHEMA, STANDARD_INSTRUCTIONS, STANDARD_ROUTINE_SELECTION_INSTRUCTIONS, FocalPointsSchema, GroundSchema, PlanSchema, ReflectSchema, RoutineSelectionSchema
 from persona.agent import Agent
 from typing import Dict, Optional, Any
+from utils import increment_prompt_log_counter
 
 import json
 
@@ -22,15 +23,19 @@ def gen_plan(
         memory = relevant_memory,
         entities = entities,
         goal = agent.plan.goal,
+        tools = agent.blackboard.generic_tools,
         instructions = agent.settings.planning.instructions,
         schema = PlanSchema.schema_json(indent=4),
-        task = "Make a plan."
+        task = "Examine the available tools and your entity knowledge to formulate a plan aligned with your current goal"
     )
     response = llm_request(
         system_prompt = system_prompt,
         messages = [user_prompt],
         log_name = "plan"
     )["message"]["content"]
+
+    
+    increment_prompt_log_counter()
 
     return clean_up_plan(response)
 
@@ -56,14 +61,37 @@ def gen_grounding(
         #actions_taken = actions_taken,
         task = "Generate the next sequence of tool callsin to complete the current task"
     )
-    response = llm_request(
-        system_prompt = system_prompt,
-        messages = [user_prompt],
-        #tools = agent.blackboard.generic_tools,
-        log_name = "ground"
-    )["message"]["content"]
 
-    return clean_up_ground(response)
+    valid = False
+    errors: list[str] = []
+    messages = [user_prompt]
+    new_message = user_prompt
+    final = None
+    while not valid:
+        response_msg = llm_request(
+            system_prompt = system_prompt,
+            messages = messages,
+            log_name = "ground"
+        )["message"]
+
+        content = response_msg["content"]
+        messages.append(content)
+
+        try:
+            final = clean_up_ground(content)
+            valid, errors = validate_ground(final, agent.blackboard.generic_tools)
+        except json.JSONDecodeError as ex:
+            errors = [f"Your response either didn't respect the schema or was ill-formated"]
+
+        messages.append(
+            "Your response includes the following errors:\n" + "\n".join([f"\t- {err}" for err in errors]) + "\n\n" + \
+            "Provide a new response that corrects those errors"
+        )
+
+    
+    increment_prompt_log_counter()
+
+    return final
 
 
 def gen_routine_selection(
@@ -84,6 +112,9 @@ def gen_routine_selection(
         messages = [user_prompt],
         log_name = "routine_goal"
     )["message"]["content"]
+
+    
+    increment_prompt_log_counter()
 
     return clean_up_routine_selection(response)
 
@@ -107,6 +138,9 @@ def gen_focal_points(
         log_name = "focal_points"
     )["message"]["content"]
 
+    
+    increment_prompt_log_counter()
+
     return clean_up_focal_points(response)
 
 
@@ -118,6 +152,7 @@ def gen_thought(
 ):
     system_prompt, user_prompt = create_standard_prompt(
         state = relevant_state,
+        goal = agent.plan.goal,
         memory = relevant_memory,
         entities = entities,
         instructions = agent.settings.reflection.instructions,
@@ -130,6 +165,9 @@ def gen_thought(
         messages = [user_prompt],
         log_name = "thought"
     )["message"]["content"]
+
+    
+    increment_prompt_log_counter()
 
     return clean_up_thought(response)
 
@@ -177,6 +215,28 @@ def clean_up_thought(response_string: str) -> ReflectSchema:
     obj = json.loads(clean_string)
 
     return ReflectSchema.parse_obj(obj)
+
+
+def validate_ground(final: GroundSchema, tools: list[Tool]) -> tuple[bool, list[str]]:
+    result = True
+    errors = []
+
+    for call in final.tool_calls:
+        tool_match = next((t for t in tools if t.function.name == call.name), None)
+        if tool_match is None:
+            result = False
+            errors.append(f"You called '{call.name}', this tool does not exist")
+        else:
+            for key, arg in call.arguments.items():
+                arg_match = tool_match.function.parameters.properties.get(key)
+                if arg_match is None:
+                    result = False
+                    errors.append(f"Your call for '{call.name}' contains an argument '{key}', this argument does not exist")
+                elif arg_match.enum is not None and arg not in arg_match.enum:
+                    result = False
+                    errors.append(f"In the call for '{call.name}', the value '{arg}' for the argument '{key}' is not valid, the value should be contained in this set: {set(arg_match.enum)}")
+
+    return result, errors
 
 
 def create_standard_prompt(

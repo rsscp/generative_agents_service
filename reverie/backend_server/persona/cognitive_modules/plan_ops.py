@@ -41,12 +41,14 @@ def op_ground(agent: Agent):
     ) #TODO include in gen the logic for this to addon actions instead of generating an entirely new sequence. Or make the agent plan one action at a time, at the request of the client
 
     
-
-    agent.plan.enqueue_actions([ToolCall(
-        name = call.name,
-        arguments = call.arguments
-     ) for call in response.tool_calls])
-    agent.plan.do_log_actions(response)
+    if response is not None:
+        agent.plan.enqueue_actions([ToolCall(
+            name = call.name,
+            arguments = call.arguments
+        ) for call in response.tool_calls])
+        agent.plan.do_log_actions(response)
+    else:
+        raise Exception("Grounding operation failed")
 
 
 def op_select_routine(agent: Agent):

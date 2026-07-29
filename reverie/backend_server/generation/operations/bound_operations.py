@@ -1,4 +1,5 @@
 import json
+from utils import increment_prompt_log_counter
 from typing import Dict, Optional
 from generation.requests import llm_request
 from persona.memory_structures.memory_blocks.node import MemoryNode, RawNode
@@ -58,6 +59,8 @@ def gen_node_poignancy(core_nodes: list[MemoryNode], description: str) -> int:
         messages = [user_prompt],
         log_name = "poignancy"
     )["message"]["content"]
+
+    increment_prompt_log_counter()
 
     return clean_up_node_poignancy(response)
 

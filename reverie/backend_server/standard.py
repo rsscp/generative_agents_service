@@ -89,7 +89,7 @@ STANDARD_GROUNDING_INSTRUCTIONS = [
   "If you deduce through the presented memories that the task has been completed already, choose the completed_task tool",
   "You call call a sequence of more than one tool if each call in that sequence doen't rely on feedback from the previous call",
   "Remember to, apart from tool calling, respond using the presented Schema"
-  "Pay special attention too enum values in tool arguments, as argument values outside the enum set will result in failure"
+  "For tool properties corresponding to entity ids, you will only use ids in the 'enum' field for that property, for example if a property has a field enum with value [\"*id1*\", \"*id2*\"] that property can only be filled by the value \"*id1*\" or \"*id2*\" (always include the prefix '{ENTITY_FENCES[0]}' and suffix '{ENTITY_FENCES[1]}' when refering to IDs)"
 ]
 GROUND_SCHEMA = {
   "thinking": SchemaField(
@@ -129,8 +129,6 @@ class ToolCallSchema(BaseModel):
 
 class GroundSchema(BaseModel):
     thinking: str = Field(description="Small text describing the reasoning behind the possible choice of tools")
-    objectives: list[str] = Field(description="List of small sentences describing real world positive outcomes that are expected from these actions")
-    avoidances: list[str] = Field(description="List of small sentences describing real world consequences being avoided")
     tool_calls: list[ToolCallSchema] = Field(description="Sequence of tool calls to be executed next")
     context_score: int = Field(description="Value between 0-100 indicating how appropriate the choosen actions are according to the current context")
 

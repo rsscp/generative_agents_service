@@ -3,7 +3,7 @@ from fastapi import HTTPException
 from numpy.typing import NDArray
 
 from persona.aid import Tool
-from utils import prompt_log_counter, run_log_name, log_json, log_text
+from utils import get_prompt_log_counter, increment_prompt_log_counter, run_log_name, log_json, log_text
 
 import numpy as np
 import requests
@@ -36,11 +36,11 @@ def llm_request(
     messages: list[str],
     log_name: str,
     tools: Optional[list[Tool]] = None,
-    model: str = "gemma4:e4b"#"qwen3.5:4b"
+    model: str = "custom_gemma4:e4b"#"qwen3.5:4b"
 ):
-    global prompt_log_counter
+    
     from pathlib import Path
-    output_file = Path(f"service_logs/{run_log_name}/{prompt_log_counter}")
+    output_file = Path(f"service_logs/{run_log_name}/{get_prompt_log_counter()}")
     output_file.mkdir(exist_ok=True, parents=True)
 
     all_messages = [{
@@ -48,7 +48,7 @@ def llm_request(
         "content": system_prompt
     }]
 
-    log_text(system_prompt, "m_system", prompt_log_counter)
+    log_text(system_prompt, "m_system")
 
     role = "assistant"
     message_counter = 0
@@ -60,8 +60,9 @@ def llm_request(
             "role": role,
             "content": m
         })
-
-        log_text(m, f"m_{role}_{message_counter}", prompt_log_counter)
+        print(f">>> m_{role}_{message_counter}")
+        log_text(m, f"m_{role}_{message_counter}")
+        message_counter += 1
 
     json_body = {
             "model": model,
@@ -72,7 +73,7 @@ def llm_request(
 
     if tools is not None:
         json_body["tools"] = [tool.dict() for tool in tools]
-        log_json([t.dict() for t in tools], "tools", prompt_log_counter)
+        log_json([t.dict() for t in tools], "tools")
 
     response = requests.post(
         "http://localhost:11434/api/chat",
@@ -84,7 +85,7 @@ def llm_request(
         print("Ollama error status:", response.status_code, flush=True)
         print("Ollama error body:", response.text, flush=True)
 
-        prompt_log_counter += 1
+        increment_prompt_log_counter()
 
         raise HTTPException(
             status_code = 502,
@@ -105,7 +106,7 @@ def llm_request(
         "generation_time": data["eval_duration"] / 1e9,
         "input tokens": data["prompt_eval_count"],
         "output tokens": data["eval_count"]
-    }, "ollama_stats", prompt_log_counter)
+    }, "ollama_stats")
 
     if "content" in data["message"].keys() and data["message"]["content"] != "":
         start = data["message"]["content"].find('{')
@@ -113,13 +114,11 @@ def llm_request(
         if start != -1 and end != 0:
             clean_string = data["message"]["content"][start:end]
             obj = json.loads(clean_string)
-            log_json(obj, log_name, prompt_log_counter)
+            log_json(obj, log_name)
         else:
-            log_text(data["message"]["content"], log_name, prompt_log_counter)
+            log_text(data["message"]["content"], log_name)
 
     if "tool_calls" in data["message"].keys():
-        log_json(data["message"]["tool_calls"], "tool_calls", prompt_log_counter)
-
-    prompt_log_counter += 1
+        log_json(data["message"]["tool_calls"], "tool_calls")
 
     return data
