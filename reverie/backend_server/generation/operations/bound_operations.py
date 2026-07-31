@@ -4,7 +4,7 @@ from typing import Dict, Optional
 from generation.requests import llm_request
 from persona.memory_structures.memory_blocks.node import MemoryNode, RawNode
 from generation.prompt_building import create_core_nodes_sec, create_instructions_sec, create_mainschema_sec, create_object_sec, create_task_sec
-from persona.aid import Schema
+from persona.aid import ChatMessage, Schema
 
 
 def clean_up_node_description(response_string: str) -> str:
@@ -55,8 +55,10 @@ def gen_node_poignancy(core_nodes: list[MemoryNode], description: str) -> int:
         task = "Respond with an integer between 0 and 100 representing the overall importance of the object presented as Object."
     )
     response = llm_request(
-        system_prompt = system_prompt,
-        messages = [user_prompt],
+        messages = [
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=user_prompt)
+        ],
         log_name = "poignancy"
     )["message"]["content"]
 

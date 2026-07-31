@@ -1,8 +1,8 @@
-from typing import Optional
+from typing import Dict, Optional
 from fastapi import HTTPException
 from numpy.typing import NDArray
 
-from persona.aid import Tool
+from persona.aid import ChatMessage, Tool, ToolCall
 from utils import get_prompt_log_counter, increment_prompt_log_counter, run_log_name, log_json, log_text
 
 import numpy as np
@@ -32,41 +32,31 @@ def embedding_request(string: str) -> EmbeddingArray:
 
 
 def llm_request(
-    system_prompt: str,
-    messages: list[str],
+    messages: list[ChatMessage],
     log_name: str,
     tools: Optional[list[Tool]] = None,
-    model: str = "custom_gemma4:e4b"#"qwen3.5:4b"
+    model: str = "custom_gemma4:e4b" #"qwen3.5:4b" #
 ):
+
+    print("||>>")
+    print([m.dict() for m in messages])
+    print("||>>")
     
     from pathlib import Path
     output_file = Path(f"service_logs/{run_log_name}/{get_prompt_log_counter()}")
     output_file.mkdir(exist_ok=True, parents=True)
 
-    all_messages = [{
-        "role": "system",
-        "content": system_prompt
-    }]
-
-    log_text(system_prompt, "m_system")
-
-    role = "assistant"
     message_counter = 0
     for m in messages:
-        if role == "user": role = "assistant"
-        else: role = "user"
-        
-        all_messages.append({
-            "role": role,
-            "content": m
-        })
-        print(f">>> m_{role}_{message_counter}")
-        log_text(m, f"m_{role}_{message_counter}")
+        if m.content is not None and m.content != "":
+            log_text(m.content, f"{message_counter}_{m.role}")
+        elif m.tool_calls is not None:
+            log_json(m.tool_calls, f"{message_counter}_{m.role}")
         message_counter += 1
 
     json_body = {
             "model": model,
-            "messages": all_messages,
+            "messages": [m.dict() for m in messages],
             "stream": False,
             "think": False,
         }
@@ -113,6 +103,9 @@ def llm_request(
         end = data["message"]["content"].rfind('}') + 1
         if start != -1 and end != 0:
             clean_string = data["message"]["content"][start:end]
+            print("CLEAN_STRING!!!")
+            print(clean_string)
+            print("CLEAN_STRING!!!")
             obj = json.loads(clean_string)
             log_json(obj, log_name)
         else:

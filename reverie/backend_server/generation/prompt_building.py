@@ -43,7 +43,7 @@ def get_schema_ready(schema: Schema) -> tuple[list[str], Dict]:
 
 
 def create_mainschema_sec(schema: str) -> str:
-    result = "# Response Schema\n"
+    result = "# Response Schema Definition\n"
     # fields, schema = get_schema_ready(schema)
     # result += create_schema_str("##", fields, schema)
     result += schema + "\n\n"
@@ -186,3 +186,7 @@ def create_task_sec(
         result += f"The tool calls in this list have already been executed:\n{json.dumps([action.dict() for action in actions_taken], indent=4)}\n"
 
     return result + task
+
+
+def create_current_task_sec(task: Optional[Dict] = None):
+    return f"# Task\n{json.dumps(task, indent=4)}\n\n"

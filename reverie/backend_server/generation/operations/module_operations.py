@@ -1,5 +1,7 @@
-from persona.aid import AgentRoutine, GroundingSequence, Schema, Tool, ToolCall
-from generation.prompt_building import create_affordances_sec, create_auxschemas_sec, create_goal_sec, create_instructions_sec, create_mainschema_sec, create_memory_sec, create_routines_sec, create_state_sec, create_task_sec, create_entities_sec, create_tools_sec
+from pydantic import BaseModel, Field
+
+from persona.aid import AgentRoutine, ChatMessage, GroundingSequence, Schema, Tool, ToolCall
+from generation.prompt_building import create_affordances_sec, create_auxschemas_sec, create_current_task_sec, create_goal_sec, create_instructions_sec, create_mainschema_sec, create_memory_sec, create_routines_sec, create_state_sec, create_task_sec, create_entities_sec, create_tools_sec
 from generation.requests import llm_request
 from persona.memory_structures.memory_blocks.node import CoreNode
 from standard import FOCAL_POINT_SCHEMA, FOCAL_POINT_AUX_SCHEMAS, ROUTINE_SELECTION_SCHEMA, STANDARD_INSTRUCTIONS, STANDARD_ROUTINE_SELECTION_INSTRUCTIONS, FocalPointsSchema, GroundSchema, PlanSchema, ReflectSchema, RoutineSelectionSchema
@@ -29,8 +31,10 @@ def gen_plan(
         task = "Examine the available tools and your entity knowledge to formulate a plan aligned with your current goal"
     )
     response = llm_request(
-        system_prompt = system_prompt,
-        messages = [user_prompt],
+        messages = [
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=user_prompt)
+        ],
         log_name = "plan"
     )["message"]["content"]
 
@@ -45,53 +49,83 @@ def gen_grounding(
     relevant_state: Dict,
     relevant_memory: Dict,
     entities: list[Dict],
-    affordances: list[Dict],
     plan_task: Dict[str, Any]
     #actions_taken: list[ToolCall]
 ):
-    system_prompt, user_prompt = create_standard_prompt(
-        state = relevant_state,
-        memory = relevant_memory,
-        entities = entities,
-        affordances = affordances,
-        schema = GroundSchema.schema_json(indent=4),
-        instructions = agent.settings.grounding.instructions,
-        tools = agent.blackboard.generic_tools,
-        plan_task = plan_task,
-        #actions_taken = actions_taken,
-        task = "Generate the next sequence of tool callsin to complete the current task"
-    )
+    class CustomSchemaA(BaseModel):
+        thoughts: list[str] = Field(description="List of short strings describing the most important conclusions that were drawn from memories and entities")
+        actions: list[str] = Field(description="List of short strings representing a batch of specific actions to take on entities in this moment that will contribute to the current task")
+
+    system_prompt = create_instructions_sec([
+        "Respond with a single JSON object",
+        "Your json response must conform to the schema specified in #Response Schema Definition"
+        "The only possible actions are suggested by the tags contained in each entity listed in #Entity Instances"
+        "Only produce actions which are suggested by these tags, otherwise default to the action 'Complete this task'"
+    ])
+
+    user_prompt = \
+        create_state_sec(relevant_state) \
+        + create_memory_sec(relevant_memory) \
+        + create_entities_sec(entities) \
+        + create_goal_sec(agent.plan.goal) \
+        + create_mainschema_sec(CustomSchemaA.schema_json(indent=4))
+
+    messages = [
+        ChatMessage(role="system", content=system_prompt),
+        ChatMessage(role="user", content=user_prompt)
+    ]
+        
+    response_msg = llm_request(
+        messages = messages,
+        log_name = "ground_phase_1"
+    )["message"]
+    start = response_msg["content"].find('{')
+    end = response_msg["content"].rfind('}') + 1
+    clean_string = response_msg["content"][start:end]
+    reasoning = json.loads(clean_string)
+
+    increment_prompt_log_counter()
+    
+    system_prompt = create_instructions_sec([
+        "Produce tool calls that attempt to execute the actions described in Task"
+    ])
+
+    user_prompt = \
+        create_entities_sec(entities) \
+        + create_memory_sec(relevant_memory) \
+        + create_current_task_sec(reasoning) \
+        + create_mainschema_sec(CustomSchemaA.schema_json(indent=4))
+
+    messages = [
+        ChatMessage(role="system", content=system_prompt),
+        ChatMessage(role="user", content=user_prompt)
+    ]
 
     valid = False
     errors: list[str] = []
-    messages = [user_prompt]
-    new_message = user_prompt
     final = None
     while not valid:
         response_msg = llm_request(
-            system_prompt = system_prompt,
             messages = messages,
-            log_name = "ground"
+            tools = agent.blackboard.generic_tools,
+            log_name = "ground_phase_2"
         )["message"]
-
-        content = response_msg["content"]
-        messages.append(content)
+        messages.append(ChatMessage(**response_msg))
 
         try:
-            final = clean_up_ground(content)
+            final = [ToolCall(name=d["function"]["name"], arguments=d["function"]["arguments"]) for d in response_msg["tool_calls"]]
             valid, errors = validate_ground(final, agent.blackboard.generic_tools)
         except json.JSONDecodeError as ex:
             errors = [f"Your response either didn't respect the schema or was ill-formated"]
 
-        messages.append(
+        messages.append(ChatMessage(role="user", content= \
             "Your response includes the following errors:\n" + "\n".join([f"\t- {err}" for err in errors]) + "\n\n" + \
             "Provide a new response that corrects those errors"
-        )
+        ))
 
-    
     increment_prompt_log_counter()
 
-    return final
+    return reasoning, final
 
 
 def gen_routine_selection(
@@ -108,8 +142,10 @@ def gen_routine_selection(
         task = "Select a routine and generate a fitting goal"
     )
     response = llm_request(
-        system_prompt = system_prompt,
-        messages = [user_prompt],
+        messages = [
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=user_prompt)
+        ],
         log_name = "routine_goal"
     )["message"]["content"]
 
@@ -133,8 +169,10 @@ def gen_focal_points(
         task = f"Respond with a list of {length} focal points that would be useful for retrieval of memories for this agent."
     )
     response = llm_request(
-        system_prompt = system_prompt,
-        messages = [user_prompt],
+        messages = [
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=user_prompt)
+        ],
         log_name = "focal_points"
     )["message"]["content"]
 
@@ -161,8 +199,10 @@ def gen_thought(
         task = "Make a thought."
     )
     response = llm_request(
-        system_prompt = system_prompt,
-        messages = [user_prompt],
+        messages = [
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=user_prompt)
+        ],
         log_name = "thought"
     )["message"]["content"]
 
@@ -217,11 +257,11 @@ def clean_up_thought(response_string: str) -> ReflectSchema:
     return ReflectSchema.parse_obj(obj)
 
 
-def validate_ground(final: GroundSchema, tools: list[Tool]) -> tuple[bool, list[str]]:
+def validate_ground(final: list[ToolCall], tools: list[Tool]) -> tuple[bool, list[str]]:
     result = True
     errors = []
 
-    for call in final.tool_calls:
+    for call in final:
         tool_match = next((t for t in tools if t.function.name == call.name), None)
         if tool_match is None:
             result = False
@@ -240,7 +280,7 @@ def validate_ground(final: GroundSchema, tools: list[Tool]) -> tuple[bool, list[
 
 
 def create_standard_prompt(
-    task: str,
+    task: Optional[str] = None,
     instructions: Optional[list[str]] = None,
     schema: Optional[str] = None,
     routines: Optional[list[AgentRoutine]] = None,
@@ -279,7 +319,7 @@ def create_standard_prompt(
     if affordances is not None:
         user_prompt += create_affordances_sec(affordances)
 
-    user_prompt += create_task_sec(task, plan_task, actions_taken)
+    #user_prompt += create_task_sec(task, plan_task, actions_taken)
 
     return system_prompt, user_prompt
 

@@ -2,7 +2,7 @@ import json
 
 from persona.agent import Agent, AgentSetup
 from generation.operations.module_operations import gen_plan, gen_grounding, gen_routine_selection
-from persona.aid import AgentRoutine, PlanStep, PlanStepLog, ToolCall
+from persona.aid import AgentRoutine, PlanStep, PlanStepLog, SegmentedGround, ToolCall
 from persona.cognitive_modules.utils import get_op_foundations, get_op_foundations_setup
 from standard import PlanStepLogSchema
 
@@ -31,22 +31,18 @@ def op_ground(agent: Agent):
 
     plan_task = agent.plan.current_task() 
 
-    response = gen_grounding(
+    reasoning, calls = gen_grounding(
         agent,
         state,
         context, 
         entities, 
-        affordances,
         plan_task
     ) #TODO include in gen the logic for this to addon actions instead of generating an entirely new sequence. Or make the agent plan one action at a time, at the request of the client
 
     
-    if response is not None:
-        agent.plan.enqueue_actions([ToolCall(
-            name = call.name,
-            arguments = call.arguments
-        ) for call in response.tool_calls])
-        agent.plan.do_log_actions(response)
+    if calls is not None:
+        agent.plan.enqueue_actions(calls)
+        agent.plan.do_log_actions(SegmentedGround(reasoning=reasoning, calls=calls))
     else:
         raise Exception("Grounding operation failed")
 

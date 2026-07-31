@@ -127,3 +127,14 @@ class Entity(BaseModel):
 class AgentRoutine(BaseModel):
     name: str
     description: str
+
+
+class SegmentedGround(BaseModel):
+    reasoning: Dict
+    calls: list[ToolCall]
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: Optional[str] = None
+    tool_calls: Optional[list[Dict]] = None

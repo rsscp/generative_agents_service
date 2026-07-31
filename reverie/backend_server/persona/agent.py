@@ -39,7 +39,7 @@ from persona.memory_structures.blackboard import Blackboard
 from persona.memory_structures.recall import Recall
 from api_classes import Contract, SchemaField
 from persona.memory_structures.memory_blocks.memory_box import MemoryBox
-from persona.aid import Entity, GroundingSequence, GroundingSettings, InteractionSettings, PlanStep, PlanStepLog, PlanningSettings, ReflectionSettings, AgentRoutine, Schema, Tool, Configuration, SchemaField, ToolCall
+from persona.aid import Entity, GroundingSequence, GroundingSettings, InteractionSettings, PlanStep, PlanStepLog, PlanningSettings, ReflectionSettings, AgentRoutine, Schema, SegmentedGround, Tool, Configuration, SchemaField, ToolCall
 
 
 class AgentException(Exception):
@@ -116,10 +116,10 @@ class Plan:
   def do_log_steps(self, steps: list[PlanStepLogSchema]):
     self.log_steps += steps
 
-  def do_log_actions(self, actions: GroundSchema):
+  def do_log_actions(self, actions: SegmentedGround):
     self.log_steps[self.log_task_counter].actions.append(actions)
 
-    if actions.tool_calls[-1].name == "completed_task":
+    if actions.calls[-1].name == "completed_task":
       self.log_task_counter += 1
 
 

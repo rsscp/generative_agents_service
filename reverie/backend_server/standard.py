@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Dict, Any
-from persona.aid import Property, SchemaField, Tool, Function, Parameters, ToolSimplified, ArgumentSimplified
+from persona.aid import Property, SchemaField, SegmentedGround, Tool, Function, Parameters, ToolSimplified, ArgumentSimplified
 
 ENTITY_FENCES = ("*", "*")
 
@@ -78,7 +78,7 @@ class PlanSchema(BaseModel):
 
 class PlanStepLogSchema(BaseModel):
     task: Dict
-    actions: list["GroundSchema"] = Field(default_factory=list["GroundSchema"])
+    actions: list[SegmentedGround] = Field(default_factory=list[SegmentedGround])
 
 
 #---------------------------
