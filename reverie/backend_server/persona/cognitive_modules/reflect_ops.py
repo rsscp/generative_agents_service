@@ -7,11 +7,10 @@ Description: This defines the "Reflect" module for generative agents.
 import sys
 from typing import Any, Dict
 
-from generation.operations.module_operations import gen_focal_points, gen_thought
+from generation.operations.module_operations import gen_node_poignancy, gen_thought
 from persona.agent import Agent
-from persona.cognitive_modules.retrieve_ops import retrieve_request
-from persona.memory_structures.memory_blocks.memory_box import node_from_raw
-from persona.memory_structures.memory_blocks.node import CoreNode, RawNode
+from persona.memory_structures.memory_blocks.node import CoreNode
+from persona.memory_structures.memory_blocks.memory_box import node_from_core
 sys.path.append('../../')
 
 import datetime
@@ -28,14 +27,17 @@ from persona.cognitive_modules.retrieve import *
 from persona.cognitive_modules.utils import get_op_foundations, get_op_foundations_setup
 
 
-def op_feed_event(agent: Agent, event: RawNode): #TODO make this call methods that lock shared resources
-  node = node_from_raw(event, agent.recall.core)
-  print(f"HELLLLLOOOOO >>> {event.description}")
+def op_feed_event(agent: Agent, event: CoreNode): #TODO make this call methods that lock shared resources
+  node = node_from_core(event)
   agent.recall.cache.add("events", node)
-  process_event(agent, node.core.poignancy)
+  process_event(agent, event)
 
 
-def process_event(agent: Agent, event_poignancy: int):
+def process_event(agent: Agent, event: CoreNode):
+  state, context, entities, affordances = get_op_foundations(agent)
+
+  event_poignancy = gen_node_poignancy(agent, context, event.description)
+
   agent.blackboard.importance_accumulator -= event_poignancy
   agent.blackboard.events_since_reflection += 1
 
@@ -62,14 +64,16 @@ def reflect(agent: Agent):
     context,
     entities
   )
+
+  #TODO to fill entities_snapshot, I need the agent to maintain snapshots of entities, which is basically what already happens with entity knowledge, but there should be two entity datastructures, one in blackboard with only currently attended entities and their actual current state and another in recall that assumes entries are outdated snapshots of entites, meaning it can even have various entries for the same object.
+
+  snapshots = {k: agent.recall.entity_snapshots[k] for k in response.entities_mentioned}
   
   agent.recall.memory.add_core("thoughts", CoreNode(
-    poignancy = response.thought.poignancy,
-    description = response.thought.description,
-    entity_keys = set(response.thought.entities_mentioned)
+    description = response.description,
+    entity_snapshots = snapshots
   ))
   agent.recall.cache.add_core("thoughts", CoreNode(
-    poignancy = response.thought.poignancy,
-    description = response.thought.description,
-    entity_keys = set(response.thought.entities_mentioned)
+    description = response.description,
+    entity_snapshots = snapshots
   ))

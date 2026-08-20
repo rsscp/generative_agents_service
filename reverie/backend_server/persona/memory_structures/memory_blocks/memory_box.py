@@ -5,22 +5,13 @@ from uuid import uuid4
 
 from pydantic import Field
 from typing import Any, Dict, Optional
-from generation.operations.bound_operations import gen_node_poignancy
 from generation.operations.embed_operations import gen_embedding
-from persona.memory_structures.memory_blocks.node import CoreNode, MemoryBatch, MemoryNode, RawNode, MemorySection
+from persona.memory_structures.memory_blocks.node import CoreNode, MemoryBatch, MemoryNode, MemorySection
 import numpy as np
 import random as rd
 
 from generation.requests import EmbeddingArray
 from utils import prune
-
-
-def node_from_raw(raw_node: RawNode, core_nodes: list[MemoryNode], curr_time: float = 0) -> MemoryNode: #TODO generate poignancy
-        return MemoryNode(CoreNode(
-            poignancy = gen_node_poignancy(core_nodes, raw_node.description),
-            description = raw_node.description,
-            entity_keys = raw_node.entity_keys
-        ), curr_time)
 
 
 def node_from_core(core_node: CoreNode, curr_time: float = 0):
@@ -41,14 +32,14 @@ class MemoryBox:
                     self.add_core(section_name, raw_node, 0)
 
     
-    def load_batch(self, batch: Dict[str, list[RawNode]], core_nodes: list[MemoryNode], curr_time: float = 0):
+    def load_batch(self, batch: Dict[str, list[CoreNode]], curr_time: float = 0):
         for sec_name, raw_nodes in batch.items():
-            self.load_section(sec_name, raw_nodes, core_nodes, curr_time)
+            self.load_section(sec_name, raw_nodes, curr_time)
 
 
-    def load_section(self, section: str, raw_nodes: list[RawNode], core_nodes: list[MemoryNode], curr_time: float = 0):
-        for raw_node in raw_nodes:
-            new_node = node_from_raw(raw_node, core_nodes, curr_time)
+    def load_section(self, section: str, core_nodes: list[CoreNode], curr_time: float = 0):
+        for core_node in core_nodes:
+            new_node = node_from_core(core_node, curr_time)
             self.add(section, new_node)
 
 
@@ -58,11 +49,6 @@ class MemoryBox:
 
     def add_core(self, section: str, complete_node: CoreNode, curr_time: float = 0):
         self.add(section, node_from_core(complete_node, curr_time))
-
-
-    def add_raw(self, section: str, raw_node: RawNode, core_nodes: list[MemoryNode], curr_time: float = 0):
-        node = node_from_raw(raw_node, core_nodes, curr_time)
-        self.add(section, node)
 
 
     def get_by_id(self, section: str, id: str) -> MemoryNode:
@@ -103,7 +89,6 @@ class MemoryBox:
         cutoff: Optional[int] = None,
         time_threshold: Optional[float] = None,
         touched_threshold: Optional[float] = None,
-        poignancy_threshold: Optional[int] = None,
         distance: Optional[float] = None
     ) -> list[MemoryNode]:
         values = list(self.sections[section].values())
@@ -114,8 +99,6 @@ class MemoryBox:
             values = prune(lambda node: node.creation_time >= time_threshold, values)
         if touched_threshold is not None:
             values = prune(lambda node: node.touched_time >= touched_threshold, values)
-        if poignancy_threshold is not None:
-            values = list(filter(lambda node: node.core.poignancy >= poignancy_threshold, values))
         if subject is not None and distance is not None:
             embedding = gen_embedding(subject)
             values = list(filter(lambda node: self.cosine_similarity(node.embedding, embedding) > distance, values))
@@ -129,7 +112,6 @@ class MemoryBox:
         cutoff: Optional[int] = None,
         time_threshold: Optional[float] = None,
         touched_threshold: Optional[float] = None,
-        poignancy_threshold: Optional[int] = None,
         distance: Optional[float] = None
     ):
         result: Dict[str, Dict] = {key: {"node": node} for key, node in self.sections[section].items()}
@@ -146,8 +128,6 @@ class MemoryBox:
             test_nodes("age_check", lambda node: node.creation_time >= time_threshold)
         if touched_threshold is not None:
             test_nodes("expiration_check", lambda node: node.touched_time >= touched_threshold)
-        if poignancy_threshold is not None:
-            test_nodes("poignancy_check", lambda node: node.core.poignancy >= poignancy_threshold)
         if subject is not None and distance is not None:
             embedding = gen_embedding(subject)
             test_nodes("semantic_distance_check", lambda node: self.cosine_similarity(node.embedding, embedding) > distance)

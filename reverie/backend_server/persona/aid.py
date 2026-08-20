@@ -9,14 +9,16 @@ class Contract(BaseModel):
 
 class ArgumentSimplified(BaseModel):
     type: Literal["string", "integer", "float", "boolean", "object", "list"]
-    tags: list[str] = []
     description: str
+    tags: list[str] = []
+    enum: Optional[list[str]] = None
 
 
 class ToolSimplified(BaseModel):
     name: str
     description: str
     arguments: Dict[str, ArgumentSimplified]
+    enabled: bool
 
 
 class Property(BaseModel):

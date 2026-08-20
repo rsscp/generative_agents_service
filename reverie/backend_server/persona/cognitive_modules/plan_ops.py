@@ -26,17 +26,22 @@ def op_plan(agent: Agent):
     agent.plan.do_log_steps([PlanStepLogSchema(task=step.dict()) for step in response.plan_steps])
 
 
-def op_ground(agent: Agent):
+def op_ground(agent: Agent, correction: bool):
     state, context, entities, affordances = get_op_foundations(agent)
 
-    plan_task = agent.plan.current_task() 
+    plan_task = agent.plan.current_task()
+    failed_action = None
+
+    if correction:
+        failed_action = agent.plan.current_action
 
     reasoning, calls = gen_grounding(
         agent,
         state,
         context, 
         entities, 
-        plan_task
+        plan_task,
+        failed_action
     ) #TODO include in gen the logic for this to addon actions instead of generating an entirely new sequence. Or make the agent plan one action at a time, at the request of the client
 
     
@@ -80,12 +85,3 @@ def op_select_routine_setup(agent_setup: AgentSetup):
     goal = response.goal
     
     agent_setup.set_plan(routine, goal)
-
-
-def op_plan_full(agent: Agent):
-    op_plan(agent)
-    
-    while not agent.plan.steps:
-        op_plan(agent)
-    while not agent.plan.steps[-1].actions or agent.plan.steps[-1].actions[-1] != "completed_task":
-        op_ground(agent)

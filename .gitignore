@@ -1,5 +1,6 @@
 reverie/backend_server/utils.py
 reverie/backend_server/service_logs/*
+reverie/backend_server/keys.json
 frontend_server/settings/local.py
 storage/*
 static_dirs/*

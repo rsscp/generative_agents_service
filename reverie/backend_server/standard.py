@@ -2,7 +2,8 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any
 from persona.aid import Property, SchemaField, SegmentedGround, Tool, Function, Parameters, ToolSimplified, ArgumentSimplified
 
-ENTITY_FENCES = ("*", "*")
+ENTITY_FENCES = ("*ID_", "*")
+SNAPSHOT_FENCES = ("*SNAP_", "*")
 
 #---------------------------
 
@@ -10,7 +11,7 @@ STANDARD_INSTRUCTIONS = [
   "You response will follow the JSON structure specified in Schema, complying with JSON formatting.",
   "Any text should be written in English",
   f"Entity IDs are presented in the format {ENTITY_FENCES[0]}entity{ENTITY_FENCES[1]}",
-  "You are only able to reference entity instances that are presented in Entity Instances"
+  "You are only able to reference entity instances that are presented in Entity Lookup"
 ]
 
 
@@ -137,7 +138,7 @@ class GroundSchema(BaseModel):
 
 STANDARD_REFLECTION_INSTRUCTIONS = [
   "Generate a single thought object",
-  "Entities can be mentioned in the description of the thought if they are contained in Entity Instances"
+  "Entities can be mentioned in the description of the thought if they are contained in Entity Lookup"
 ]
 REFLECT_SCHEMA = {
   "thought": SchemaField(
@@ -165,12 +166,8 @@ REFLECT_SCHEMA = {
 }
 
 class ThoughtSchema(BaseModel):
-    description: str = Field(description="Description of the thought deduced recent events and other memories")
-    poignancy: int = Field(description="Value between 0-100 that rates the overall importance of this thought object")
-    entities_mentioned: list[str] = Field(description="List of entity string IDs that are mentioned in this thought object")
-
-class ReflectSchema(BaseModel):
-    thought: ThoughtSchema = Field(description="Object representing a thought")
+  description: str = Field(description="Description of the thought deduced recent events and other memories")
+  entities_mentioned: list[str] = Field(description="List of entity string IDs that are mentioned in this thought object")
 
 
 #---------------------------
@@ -200,11 +197,12 @@ class FocalPointsSchema(BaseModel):
 #---------------------------
 
 DEFAULT_ACTIONS = [
-  Tool.create(ToolSimplified(
+  ToolSimplified(
     name = "completed_task",
     description = "This action is used to end a sequence of actions that already acomplish the described task",
-    arguments = {}
-  )),
+    arguments = {},
+    enabled = True
+  ),
   # Tool.create(ToolSimplified(
   #   name = "execute_affordance",
   #   description = "This action is used to execute an affordance listed under Entity Affordances",

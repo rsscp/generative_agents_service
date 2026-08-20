@@ -1,5 +1,7 @@
+import os
+import time
 from typing import Dict, Optional
-from fastapi import HTTPException
+from fastapi import HTTPException, Path
 from numpy.typing import NDArray
 
 from persona.aid import ChatMessage, Tool, ToolCall
@@ -12,6 +14,34 @@ import json
 
 
 EmbeddingArray = NDArray[np.float32]
+
+
+llm_choice = os.getenv("API_CHOICE", "custom-local-gemma")
+keys = json.loads(Path("keys.json").read_text(encoding="utf-8"))
+
+
+llm_choices = {
+    "groq-gpt-20b": {
+        "model": "openai/gpt-oss-20b",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "key": keys["groq-gpt-20b"]
+    },
+    "groq-gpt-120b": {
+        "model": "openai/gpt-oss-120b",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "key": keys["groq-gpt-120b"]
+    },
+    "gemini-3.6": {
+        "model": "gemini-3.6-flash",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        "key": keys["gemini-3.6"]
+    },
+    "custom-local-gemma": {
+        "model": "custom_gemma4:e4b",
+        "url": "http://localhost:11434/v1/chat/completions",
+        "key": keys["custom-local-gemma"]
+    }
+}
 
 
 def embedding_request(string: str) -> EmbeddingArray:
@@ -35,12 +65,8 @@ def llm_request(
     messages: list[ChatMessage],
     log_name: str,
     tools: Optional[list[Tool]] = None,
-    model: str = "custom_gemma4:e4b" #"qwen3.5:4b" #
+    llm_choice: str = llm_choice #"gemini-3.6-flash" #"custom_gemma4:e4b" #"qwen3.5:4b" #
 ):
-
-    print("||>>")
-    print([m.dict() for m in messages])
-    print("||>>")
     
     from pathlib import Path
     output_file = Path(f"service_logs/{run_log_name}/{get_prompt_log_counter()}")
@@ -49,69 +75,90 @@ def llm_request(
     message_counter = 0
     for m in messages:
         if m.content is not None and m.content != "":
+            print(f"FILE>>> {message_counter}_{m.role}")
+            print(f"CONTENT>>> {m.content}")
             log_text(m.content, f"{message_counter}_{m.role}")
         elif m.tool_calls is not None:
             log_json(m.tool_calls, f"{message_counter}_{m.role}")
         message_counter += 1
 
+    headers={ "Content-Type": "application/json" }
+
     json_body = {
-            "model": model,
-            "messages": [m.dict() for m in messages],
-            "stream": False,
-            "think": False,
-        }
+        "model": llm_choices[llm_choice]['model'],
+        "messages": [m.dict(exclude_none=True) for m in messages],
+        "stream": False,
+        "temperature": 0.2,
+        "reasoning_effort": "low"
+    }
+
+    if llm_choices[llm_choice]['key'] is not None:
+        headers["Authorization"] = f"Bearer {llm_choices[llm_choice]['key']}"
 
     if tools is not None:
-        json_body["tools"] = [tool.dict() for tool in tools]
+        json_body["tools"] = [tool.dict(exclude_none=True) for tool in tools]
+        json_body["tool_choice"] = "auto"
         log_json([t.dict() for t in tools], "tools")
 
-    response = requests.post(
-        "http://localhost:11434/api/chat",
-        json=json_body,
-        timeout=120
-    )
+    try:
+        session = requests.Session()
+        session.trust_env = False
 
-    if not response.ok:
-        print("Ollama error status:", response.status_code, flush=True)
-        print("Ollama error body:", response.text, flush=True)
+        print(json.dumps(json_body, indent=4))
 
-        increment_prompt_log_counter()
+        start_time = time.perf_counter()
 
-        raise HTTPException(
-            status_code = 502,
-            detail = {
-                "error": "ollama_request_failed",
-                "ollama_status": response.status_code,
-                "ollama_body": response.text,
+        response = requests.post(
+            llm_choices[llm_choice]['url'],
+            headers={
+                "Authorization": f"Bearer {llm_choices[llm_choice]['key']}",
+                "Content-Type": "application/json"
             },
+            json=json_body,
+            timeout=120
         )
+
+        latency_ms = (time.perf_counter() - start_time) * 1000
+
+        print("Status:", response.status_code, flush=True)
+        print("Body:", response.text, flush=True)
+
+    except requests.exceptions.RequestException as exc:
+        print("Exception type:", type(exc).__name__, flush=True)
+        print("Exception repr:", repr(exc), flush=True)
+        raise
 
     response.raise_for_status()
     data = response.json()
 
     log_json({
-        "total_time": data["total_duration"] / 1e9,
-        "load_time": data["load_duration"] / 1e9,
-        "prompt_eval_time": data["prompt_eval_duration"] / 1e9,
-        "generation_time": data["eval_duration"] / 1e9,
-        "input tokens": data["prompt_eval_count"],
-        "output tokens": data["eval_count"]
-    }, "ollama_stats")
+        "prompt_tokens": data["usage"].get("prompt_tokens"),
+        "completion_tokens": data["usage"].get("completion_tokens"),
+        "total_tokens": data["usage"].get("total_tokens"),
+        "latency_ms": latency_ms
+    }, "metrics")
 
-    if "content" in data["message"].keys() and data["message"]["content"] != "":
-        start = data["message"]["content"].find('{')
-        end = data["message"]["content"].rfind('}') + 1
+    msg_content = None
+    msg_tool_calls = None
+
+    if "content" in data["choices"][0]["message"].keys() and data["choices"][0]["message"]["content"] != "":
+        msg_content = data["choices"][0]["message"]["content"]
+
+        start = msg_content.find('{')
+        end = msg_content.rfind('}') + 1
         if start != -1 and end != 0:
-            clean_string = data["message"]["content"][start:end]
+            clean_string = msg_content[start:end]
             print("CLEAN_STRING!!!")
             print(clean_string)
             print("CLEAN_STRING!!!")
             obj = json.loads(clean_string)
             log_json(obj, log_name)
         else:
-            log_text(data["message"]["content"], log_name)
+            log_text(msg_content, log_name)
 
-    if "tool_calls" in data["message"].keys():
-        log_json(data["message"]["tool_calls"], "tool_calls")
+    if "tool_calls" in data["choices"][0]["message"].keys():
+        msg_tool_calls = data["choices"][0]["message"]["tool_calls"]
 
-    return data
+        log_json(msg_tool_calls, "tool_calls")
+
+    return msg_content, msg_tool_calls

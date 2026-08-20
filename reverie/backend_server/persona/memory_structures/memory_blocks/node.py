@@ -10,9 +10,8 @@ from standard import ENTITY_FENCES
 Embedding = tuple[float]
 
 class CoreNode(BaseModel):
-    poignancy: int
     description: str
-    entity_keys: set[str]
+    entity_snapshots: Dict[str, str]
 
 
 class MemoryNode:
@@ -29,24 +28,25 @@ class MemoryNode:
         self.checkConsistency()
 
     def checkConsistency(self):
-        pattern = (
-            rf"{re.escape(ENTITY_FENCES[0])}"
-            r"([a-zA-Z0-9_-]+)"
-            rf"{re.escape(ENTITY_FENCES[1])}"
-        )
-        mentioned: set[str] = set(re.findall(pattern, self.core.description))
+        mentioned = extract_ids(self.core.description)
         
-        if mentioned & self.core.entity_keys:
+        if mentioned & set(self.core.entity_snapshots.keys()):
             raise Exception("Identified entities do not match references in this node's description")
 
     def touch(self, curr_time: float):
         self.touched_time = curr_time
-
-
-class RawNode(BaseModel):
-    description: str
-    entity_keys: set[str]
     
 
 MemorySection = Dict[str, MemoryNode]
 MemoryBatch = Dict[str, MemorySection]
+
+
+def extract_ids(description: str) -> set[str]:
+    pattern = (
+        rf"{re.escape(ENTITY_FENCES[0])}"
+        r"([a-zA-Z0-9_-]+)"
+        rf"{re.escape(ENTITY_FENCES[1])}"
+    )
+    mentioned: set[str] = set(re.findall(pattern, description))
+
+    return mentioned

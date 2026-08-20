@@ -20,8 +20,8 @@ import datetime
 
 from global_methods import *
 from typing import Dict, Optional
-from persona.memory_structures.memory_blocks.memory_box import CacheBox, MemoryBox, node_from_core, node_from_raw
-from persona.memory_structures.memory_blocks.node import CoreNode, MemoryNode, RawNode
+from persona.memory_structures.memory_blocks.memory_box import CacheBox, MemoryBox, node_from_core
+from persona.memory_structures.memory_blocks.node import CoreNode, MemoryNode, extract_ids
 from persona.memory_structures.associative_memory import ConceptNode
 from persona.aid import Entity
 
@@ -42,9 +42,11 @@ class RecallConfig(BaseModel):
 
 
 class Recall: 
+
   def __init__(self,
     core_nodes: list[CoreNode],
     node_sections: Dict[str, list[CoreNode]],
+    entities: list[Entity]
   ):
     self.id_to_node = dict()
 
@@ -74,6 +76,7 @@ class Recall:
     self.core: list[MemoryNode] = [node_from_core(node) for node in core_nodes]
     self.memory: MemoryBox = MemoryBox(node_sections)
     self.cache: CacheBox = CacheBox({sec: [] for sec in node_sections.keys()})
+    self.entity_snapshots: Dict[str, str] = {entity.id: entity.description for entity in entities}
 
 
   def load_cache(self,
@@ -89,8 +92,7 @@ class Recall:
       self.config.recency,
       time_threshold,
       touched_threshold,
-      self.config.poignancy,
-      self.config.distance,
+      self.config.distance
     )
   
   def load_cache_specific(self,
@@ -99,7 +101,6 @@ class Recall:
     recency: Optional[int] = None,
     time_threshold: Optional[float] = None,
     touched_threshold: Optional[float] = None,
-    poignancy: Optional[int] = None,
     distance: Optional[float] = None,
   ):
     for sec in sections:
@@ -109,7 +110,6 @@ class Recall:
         recency,
         time_threshold,
         touched_threshold,
-        poignancy,
         distance
       )
       [self.cache.add(sec, node) for node in relevant]
@@ -128,7 +128,6 @@ class Recall:
         self.config.recency,
         time_threshold,
         touched_threshold,
-        self.config.poignancy,
         self.config.distance,
       )
 
@@ -136,31 +135,39 @@ class Recall:
   
 
   def add_task_progress(self, task: str):
-    node = node_from_raw(RawNode(
-      description = task, entity_keys = set()
-    ), self.core)
+    node = node_from_core(CoreNode(
+      description = task,
+      entity_snapshots = {id: self.entity_snapshots[id] for id in extract_ids(task)}
+    ))
 
     self.memory.add("completed_tasks", node)
     self.cache.add("completed_tasks", node)
 
+
   def add_error(self, error: str):
-    node = node_from_raw(RawNode(
-      description = error, entity_keys = set()
-    ), self.core)
+    node = node_from_core(CoreNode(
+      description = error,
+      entity_snapshots = {id: self.entity_snapshots[id] for id in extract_ids(error)}
+    ))
     
     self.memory.add("errors", node)
     self.cache.add("errors", node)
 
 
-  def update(self, curr_time: float, new_batch: Optional[Dict[str, list[RawNode]]]):
+  def update(self, curr_time: float, new_batch: Optional[Dict[str, list[CoreNode]]]):
     if curr_time < self.time:
       raise Exception("Provided game time is behind agent system accounted time") #TODO fazer exceção mais específica
   
     self.cache.cleanup(curr_time, STANDARD_AGE_THRESHOLD)
 
     if new_batch is not None:
-      self.cache.load_batch(new_batch, self.core)
-      self.memory.load_batch(new_batch, self.core)
+      self.cache.load_batch(new_batch)
+      self.memory.load_batch(new_batch)
+
+
+  def update_entity_snapshots(self, snapshots: Dict[str, str]):
+    for k, v in snapshots.items():
+      self.entity_snapshots[k] = v
 
     
   def save(self, out_json):

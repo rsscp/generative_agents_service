@@ -13,11 +13,19 @@ def create_instructions_sec(instructions: list[str]) -> str:
     return result
 
 
+def create_event_sec(description: str):
+    result = "# Event\n"
+    result += description + "\n\n"
+
+    return result
+
+
 def create_schema_str(header: str, fields: list[str], schema: Dict) -> str:
     string = f"{header} Fields\n"
     string += "".join([f"- {f}\n" for f in fields])
     string += f"{header} Schema\n"
     string += json.dumps(schema, indent=4) + "\n"
+
     return string
 
 
@@ -190,3 +198,7 @@ def create_task_sec(
 
 def create_current_task_sec(task: Optional[Dict] = None):
     return f"# Task\n{json.dumps(task, indent=4)}\n\n"
+
+
+def create_failed_action_sec(failed_action: ToolCall):
+    return f"# Errors\nThis action was attempted and failed:{json.dumps(failed_action.dict(), indent=4)}\nYou may not attempt it again"

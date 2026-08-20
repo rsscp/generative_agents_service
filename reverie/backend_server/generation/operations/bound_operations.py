@@ -1,10 +1,8 @@
 import json
-from utils import increment_prompt_log_counter
 from typing import Dict, Optional
-from generation.requests import llm_request
-from persona.memory_structures.memory_blocks.node import MemoryNode, RawNode
+from persona.memory_structures.memory_blocks.node import MemoryNode
 from generation.prompt_building import create_core_nodes_sec, create_instructions_sec, create_mainschema_sec, create_object_sec, create_task_sec
-from persona.aid import ChatMessage, Schema
+from persona.aid import Schema
 
 
 def clean_up_node_description(response_string: str) -> str:
@@ -38,33 +36,6 @@ def create_node_req_prompt(
     user_prompt += create_task_sec(task)
 
     return system_prompt, user_prompt
-
-
-def clean_up_node_poignancy(response_string: str) -> int:
-    return int(response_string)
-
-
-def gen_node_poignancy(core_nodes: list[MemoryNode], description: str) -> int:
-    system_prompt, user_prompt = create_node_req_prompt(
-        instructions = [
-            "Your response will be a single integer, between 0 and 100, which reflects the importance of the information contained in the presented object",
-            "Your response will not contain JSON or aditional text",
-        ],
-        core_nodes = core_nodes,
-        object = {"description": description},
-        task = "Respond with an integer between 0 and 100 representing the overall importance of the object presented as Object."
-    )
-    response = llm_request(
-        messages = [
-            ChatMessage(role="system", content=system_prompt),
-            ChatMessage(role="user", content=user_prompt)
-        ],
-        log_name = "poignancy"
-    )["message"]["content"]
-
-    increment_prompt_log_counter()
-
-    return clean_up_node_poignancy(response)
 
 
 def clean_up_node_reqs(response_string: str) -> tuple[str, int]:

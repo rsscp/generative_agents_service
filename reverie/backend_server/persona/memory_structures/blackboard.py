@@ -14,7 +14,7 @@ sys.path.append('../../')
 from global_methods import *
 from typing import Dict, Any
 from threading import Lock
-from persona.aid import Entity, Tool, PlanStep
+from persona.aid import Entity, Tool, PlanStep, ToolSimplified
 
 class ReflectionConfig:
     recency_weight = 1
@@ -39,7 +39,7 @@ class Blackboard:
     self.retention = 5
     self.state = state
     self.attended_entities: Dict[str, Entity] = {entity.id: entity for entity in entities}
-    self.generic_tools: list[Tool] = []
+    self.generic_tools: Dict[str, ToolSimplified] = {}
 
     # Reflection
     self.reflection_config = ReflectionConfig()
@@ -57,16 +57,17 @@ class Blackboard:
     '''
 
 
-  def set_tools(self, actions: list[Tool]):
+  def set_tools(self, tools: list[ToolSimplified]):
     with self.lock:
-      self.generic_tools = actions
+      self.generic_tools = {t.name: t for t in tools}
       self.update_tool_arguments()
+
 
   def update_tool_arguments(self):
     properties = [
       property
-      for tool in self.generic_tools
-      for property in tool.function.parameters.properties.values()
+      for tool in self.generic_tools.values()
+      for property in tool.arguments.values()
     ]
     for p in [p for p in properties if len(p.tags) > 0]:
       valid_entity_ids = [
@@ -74,8 +75,15 @@ class Blackboard:
         for ent in self.attended_entities.values()
         if len(set(p.tags) & set(ent.tags)) == len(p.tags)
       ]
+
       p.enum = valid_entity_ids
 
+
+  def update_tool_state(self, tools_state: Dict[str, bool]):
+    for name, enabled in tools_state.items():
+      tool = self.generic_tools.get(name)
+      if tool is not None:
+        tool.enabled = enabled
 
 
 

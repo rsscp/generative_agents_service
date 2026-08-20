@@ -14,7 +14,7 @@ import datetime
 import random
 
 from pydantic import BaseModel, Field
-from persona.memory_structures.memory_blocks.node import CoreNode, MemoryNode, RawNode
+from persona.memory_structures.memory_blocks.node import CoreNode, MemoryNode
 from standard import DEFAULT_ACTIONS, GROUND_AUX_SCHEMAS, PLAN_SCHEMA, PLAN_AUX_SCHEMAS, GROUND_SCHEMA, STANDARD_GROUNDING_INSTRUCTIONS, STANDARD_INSTRUCTIONS, STANDARD_PLANNING_INSTRUCTIONS, GroundSchema, PlanStepLogSchema
 
 sys.path.append('../')
@@ -39,7 +39,7 @@ from persona.memory_structures.blackboard import Blackboard
 from persona.memory_structures.recall import Recall
 from api_classes import Contract, SchemaField
 from persona.memory_structures.memory_blocks.memory_box import MemoryBox
-from persona.aid import Entity, GroundingSequence, GroundingSettings, InteractionSettings, PlanStep, PlanStepLog, PlanningSettings, ReflectionSettings, AgentRoutine, Schema, SegmentedGround, Tool, Configuration, SchemaField, ToolCall
+from persona.aid import Entity, GroundingSequence, GroundingSettings, InteractionSettings, PlanStep, PlanStepLog, PlanningSettings, ReflectionSettings, AgentRoutine, Schema, SegmentedGround, Tool, Configuration, SchemaField, ToolCall, ToolSimplified
 
 
 class AgentException(Exception):
@@ -87,6 +87,8 @@ class Plan:
     self.goal: str = goal
 
     self.steps: list[PlanStep] = []
+    self.current_action: Optional[ToolCall] = None
+
     self.log_steps: list[PlanStepLogSchema] = []
     self.log_task_counter = 0
     self.task_index: int = self.INVALID_T_INDEX
@@ -109,9 +111,9 @@ class Plan:
       self.steps.pop(0)
       return self.dequeue_action()
     else:
-      action = self.steps[0].actions[0]
+      self.current_action = self.steps[0].actions[0]
       self.steps[0].actions.pop(0)
-      return "ok", action
+      return "ok", self.current_action
     
   def do_log_steps(self, steps: list[PlanStepLogSchema]):
     self.log_steps += steps
@@ -388,10 +390,13 @@ class AgentSetup:
 
   def set_memory(self, core_nodes: list[CoreNode], node_sections: Dict[str, list[CoreNode]]):
     with self.lock:
-      self.recall = Recall(core_nodes, node_sections)
+      if self.blackboard is None:
+        raise Exception("State should be setup before memory")
+
+      self.recall = Recall(core_nodes, node_sections, list(self.blackboard.attended_entities.values()))
 
 
-  def set_tools(self, actions: list[Tool]):
+  def set_tools(self, actions: list[ToolSimplified]):
     with self.lock:
       self.blackboard.set_tools(actions + DEFAULT_ACTIONS)
       #self.blackboard.tools += DEFAULT_ACTIONS

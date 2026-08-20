@@ -18,7 +18,7 @@ from simulation import Simulation
 from persona.agent import AgentSetup, MissingAgentRequirements, RepeatedSchemaNames
 
 from typing import Dict
-from persona.cognitive_modules.plan_ops import op_plan_full, op_plan, op_ground, op_select_routine, op_select_routine_setup
+from persona.cognitive_modules.plan_ops import op_plan, op_ground, op_select_routine, op_select_routine_setup
 from persona.aid import Tool, PlanStep, ToolCall
 
 
@@ -66,9 +66,7 @@ def setup_agent_memory(agent_id: str, request: SetMemoryRequest):
 
 @app.post("/simulation/agents/{agent_id}/setup/tools", response_model=str)
 def setup_agent_tools(agent_id: str, request: Dict[str, ToolSimplified]):
-    print(json.dumps({k: v.dict() for k, v in request.items()}, indent=4)) #TODO DELETE
-    processed = [Tool.create(tool) for tool in request.values()]
-    sim.agents_setup[agent_id].set_tools(processed)
+    sim.agents_setup[agent_id].set_tools([t for t in request.values()])
     return "ok"
 
 
@@ -140,16 +138,7 @@ def plan_request(agent_id: str, request: PlanRequest):
 
 @app.post("/simulation/agents/{agent_id}/ground", response_model=str)
 def grounded_request(agent_id: str):
-    op_ground(sim.get_agent(agent_id))
-    return "ok"
-
-
-@app.post("/simulation/agents/{agent_id}/plan_all", response_model=str)
-def plan_all_request(agent_id: str, background_tasks: BackgroundTasks):
-    background_tasks.add_task(
-        op_plan_full,
-        sim.get_agent(agent_id)
-    )
+    op_ground(sim.get_agent(agent_id), False)
     return "ok"
 
 
@@ -160,40 +149,34 @@ def plan_all_request(agent_id: str, background_tasks: BackgroundTasks):
 def feeback_request(agent_id: str, request: FeedbackRequest):
     agent = sim.get_agent(agent_id)
 
-    agent.blackboard.state = request.state
-    agent.blackboard.attended_entities = {entity.id: entity for entity in request.entities}
-    agent.blackboard.update_tool_arguments()
+    print(":::FEEDBACK:::")
+    print(json.dumps(request.event.dict(), indent=4))
 
-    op_feed_event(agent, RawNode(
-        description = request.event.description,
-        entity_keys = request.event.entity_keys
-    ))
+    if request.state is not None:
+        agent.blackboard.state = request.state
+    if request.entities is not None:
+        agent.blackboard.attended_entities = {entity.id: entity for entity in request.entities}
+        agent.blackboard.update_tool_arguments()
+    if request.tools_state is not None:
+        agent.blackboard.update_tool_state(request.tools_state)
+
+    agent.recall.update_entity_snapshots(request.event.entity_snapshots)
+    op_feed_event(agent, request.event)
     
     return "ok"
 
 
 @app.post("/simulation/agents/{agent_id}/next_action", response_model=NextActionResponse)
-def next_action(agent_id: str):
+def next_action(agent_id: str, request: NextActionRequest):
     agent = sim.get_agent(agent_id)
-    # old_task = agent.plan.current_task()
-
-    # if old_task is None:
-    #     op_plan(agent) 
-    # if agent.plan.get_action() is None:
-    #     op_ground(agent)
-
-    # agent.plan.advance_index()
-    # action = agent.plan.get_action()
-
     signal, action = "", None
-
+        
     while signal != "ok" and action is None:
         signal, action = agent.plan.dequeue_action()
-
         if signal == "needs_plan":
             op_plan(agent)
         elif signal == "needs_ground":
-            op_ground(agent)
+            op_ground(agent, request.correction)
 
     assert(action is not None)
 
@@ -216,6 +199,11 @@ def next_action(agent_id: str):
     )
 
     return response
+
+
+@app.post("/simulation/agents/{agent_id}/invalid_action", response_model=NextActionResponse)
+def invalid_action(agent_id: str):
+    pass
 
 
 # Getter requests
