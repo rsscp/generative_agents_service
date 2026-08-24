@@ -9,7 +9,7 @@ from typing import Any, Dict
 
 from generation.operations.module_operations import gen_node_poignancy, gen_thought
 from persona.agent import Agent
-from persona.memory_structures.memory_blocks.node import CoreNode
+from persona.aid import CoreNode
 from persona.memory_structures.memory_blocks.memory_box import node_from_core
 sys.path.append('../../')
 
@@ -34,7 +34,7 @@ def op_feed_event(agent: Agent, event: CoreNode): #TODO make this call methods t
 
 
 def process_event(agent: Agent, event: CoreNode):
-  state, context, entities, affordances = get_op_foundations(agent)
+  state, context, entities = get_op_foundations(agent)
 
   event_poignancy = gen_node_poignancy(agent, context, event.description)
 
@@ -56,7 +56,7 @@ def reset_reflection(agent: Agent):
 
 
 def reflect(agent: Agent):
-  state, context, entities, *_ = get_op_foundations(agent)
+  state, context, entities = get_op_foundations(agent)
   
   response = gen_thought(
     agent,

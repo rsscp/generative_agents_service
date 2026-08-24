@@ -14,7 +14,8 @@ import datetime
 import random
 
 from pydantic import BaseModel, Field
-from persona.memory_structures.memory_blocks.node import CoreNode, MemoryNode
+from persona.memory_structures.memory_blocks.node import MemoryNode
+from persona.aid import CoreNode
 from standard import DEFAULT_ACTIONS, GROUND_AUX_SCHEMAS, PLAN_SCHEMA, PLAN_AUX_SCHEMAS, GROUND_SCHEMA, STANDARD_GROUNDING_INSTRUCTIONS, STANDARD_INSTRUCTIONS, STANDARD_PLANNING_INSTRUCTIONS, GroundSchema, PlanStepLogSchema
 
 sys.path.append('../')
@@ -114,6 +115,11 @@ class Plan:
       self.current_action = self.steps[0].actions[0]
       self.steps[0].actions.pop(0)
       return "ok", self.current_action
+
+  def empty_task(self):
+    empty_signal = ""
+    while empty_signal != "needs_ground":
+      empty_signal, _ = self.dequeue_action()
     
   def do_log_steps(self, steps: list[PlanStepLogSchema]):
     self.log_steps += steps
@@ -264,9 +270,6 @@ class Plan:
 
     while key == "completed_task":
       hit, action, key = self.advance_index()
-
-      print("\n\n\n")
-      print(f"Index: ({self.task_index}, {self.action_index})")
       
     return action
       
@@ -311,6 +314,55 @@ class Agent:
       raise RepeatedSchemaNames(pas_common_keys)
     else:
       self.settings.planning.aux_schemas = PLAN_AUX_SCHEMAS | settings.planning.aux_schemas
+
+
+  def log_snapshot(self):
+    agent_json = {
+      "blackboard": {
+        "state": self.blackboard.state,
+        "entities": {k: v.dict() for k, v in self.blackboard.attended_entities.items()},
+        "generic_tools": {k: v.dict() for k, v in self.blackboard.generic_tools.items()},
+        "importance_accumulator": self.blackboard.importance_accumulator
+      },
+      "recall": {
+        "core": [
+          {
+            "core": node.core.dict(),
+            "embedding": node.embedding.astype(float).tolist(),
+            "creation_time": node.creation_time,
+            "touched_time": node.touched_time
+          }
+          for node in self.recall.core
+        ],
+        "memory": {
+          sec_name: {
+            id: {
+              "core": node.core.dict(),
+              "embedding": node.embedding.astype(float).tolist(),
+              "creation_time": node.creation_time,
+              "touched_time": node.touched_time
+            }
+            for id, node in sec.items()
+          }
+          for sec_name, sec in self.recall.memory.sections.items()
+        },
+        "cache": {
+          sec_name: {
+            id: {
+              "core": node.core.dict(),
+              "embedding": node.embedding.astype(float).tolist(),
+              "creation_time": node.creation_time,
+              "touched_time": node.touched_time
+            }
+            for id, node in sec.items()
+          }
+          for sec_name, sec in self.recall.cache.sections.items()
+        },
+        "entity_snapshots": self.recall.entity_snapshots
+      }
+    }
+
+    log_json(agent_json, "agent_snapshot")
 
 
   def set_plan(self, routine: AgentRoutine, goal: str): #TODO is this the best solution? This trusts that set_plan is called imidietly after create_agent and only then is the agent valid

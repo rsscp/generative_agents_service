@@ -11,6 +11,7 @@ import sys
 
 from pydantic import BaseModel
 
+from persona.aid import CoreNode
 from standard import STANDARD_MEMORY_SECTIONS
 
 sys.path.append('../../')
@@ -21,7 +22,7 @@ import datetime
 from global_methods import *
 from typing import Dict, Optional
 from persona.memory_structures.memory_blocks.memory_box import CacheBox, MemoryBox, node_from_core
-from persona.memory_structures.memory_blocks.node import CoreNode, MemoryNode, extract_ids
+from persona.memory_structures.memory_blocks.node import MemoryNode, extract_ids
 from persona.memory_structures.associative_memory import ConceptNode
 from persona.aid import Entity
 

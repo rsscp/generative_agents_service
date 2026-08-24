@@ -13,7 +13,7 @@ def op_plan(agent: Agent):
         agent.plan.goal
     )
 
-    state, context, entities, *_ = get_op_foundations(agent)
+    state, context, entities = get_op_foundations(agent)
     
     response = gen_plan(
         agent,
@@ -27,7 +27,7 @@ def op_plan(agent: Agent):
 
 
 def op_ground(agent: Agent, correction: bool):
-    state, context, entities, affordances = get_op_foundations(agent)
+    state, context, entities = get_op_foundations(agent)
 
     plan_task = agent.plan.current_task()
     failed_action = None

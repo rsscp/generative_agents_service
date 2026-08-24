@@ -7,6 +7,7 @@ from persona.aid import Configuration, Entity, Function, Parameters, PlanStepLog
 from persona.cognitive_modules.reflect_ops import op_feed_event
 from generation.requests import embedding_request
 from persona.memory_structures.memory_blocks.node import MemoryNode
+from persona.aid import CoreNode
 from utils import *
 from maze import *
 
@@ -29,7 +30,6 @@ sim: Simulation = Simulation("only_sim") #TODO change if later more simultaneous
 
 import os 
 dir_path = os.path.dirname(os.path.realpath(__file__))
-print(dir_path)
 
 
 # Setup/Creation requests
@@ -149,9 +149,6 @@ def grounded_request(agent_id: str):
 def feeback_request(agent_id: str, request: FeedbackRequest):
     agent = sim.get_agent(agent_id)
 
-    print(":::FEEDBACK:::")
-    print(json.dumps(request.event.dict(), indent=4))
-
     if request.state is not None:
         agent.blackboard.state = request.state
     if request.entities is not None:
@@ -170,13 +167,24 @@ def feeback_request(agent_id: str, request: FeedbackRequest):
 def next_action(agent_id: str, request: NextActionRequest):
     agent = sim.get_agent(agent_id)
     signal, action = "", None
+    correction = request.correction
+
+    from pathlib import Path
+    output_file = Path(f"service_logs/{run_log_name}/{get_prompt_log_counter()}")
+    output_file.mkdir(exist_ok=True, parents=True)
+    agent.log_snapshot()
         
     while signal != "ok" and action is None:
         signal, action = agent.plan.dequeue_action()
         if signal == "needs_plan":
             op_plan(agent)
         elif signal == "needs_ground":
-            op_ground(agent, request.correction)
+            op_ground(agent, False)
+        elif correction:
+            agent.plan.empty_task()
+            signal, action = "", None
+            correction = False
+            op_ground(agent, True)
 
     assert(action is not None)
 
@@ -197,6 +205,8 @@ def next_action(agent_id: str, request: NextActionRequest):
         is_affordance = is_affordance,
         target_entity_id = target_entity_id
     )
+
+    print(f"NEXT_ACTION:\n{json.dumps(tool_call.dict(), indent=4)}")
 
     return response
 

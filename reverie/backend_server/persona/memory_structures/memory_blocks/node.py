@@ -1,20 +1,16 @@
 from typing import Dict, Optional
-from pydantic import Field, BaseModel
+from pydantic import BaseModel, Field
 from generation.operations.embed_operations import gen_embedding
 from generation.requests import EmbeddingArray
 from persona.aid import Entity, Tool
 import regex as re
+from persona.aid import CoreNode
 from standard import ENTITY_FENCES
 
 
 Embedding = tuple[float]
 
-class CoreNode(BaseModel):
-    description: str
-    entity_snapshots: Dict[str, str]
-
-
-class MemoryNode:
+class MemoryNode():
     core: CoreNode
     embedding: EmbeddingArray
     creation_time: float

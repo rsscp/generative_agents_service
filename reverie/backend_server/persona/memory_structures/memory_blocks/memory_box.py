@@ -6,11 +6,12 @@ from uuid import uuid4
 from pydantic import Field
 from typing import Any, Dict, Optional
 from generation.operations.embed_operations import gen_embedding
-from persona.memory_structures.memory_blocks.node import CoreNode, MemoryBatch, MemoryNode, MemorySection
+from persona.memory_structures.memory_blocks.node import MemoryBatch, MemoryNode, MemorySection
 import numpy as np
 import random as rd
 
 from generation.requests import EmbeddingArray
+from persona.aid import CoreNode
 from utils import prune
 
 

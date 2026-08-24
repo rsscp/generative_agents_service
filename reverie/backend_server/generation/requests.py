@@ -1,7 +1,8 @@
 import os
 import time
 from typing import Dict, Optional
-from fastapi import HTTPException, Path
+from fastapi import HTTPException
+from pathlib import Path
 from numpy.typing import NDArray
 
 from persona.aid import ChatMessage, Tool, ToolCall
@@ -67,7 +68,7 @@ def llm_request(
     tools: Optional[list[Tool]] = None,
     llm_choice: str = llm_choice #"gemini-3.6-flash" #"custom_gemma4:e4b" #"qwen3.5:4b" #
 ):
-    
+      
     from pathlib import Path
     output_file = Path(f"service_logs/{run_log_name}/{get_prompt_log_counter()}")
     output_file.mkdir(exist_ok=True, parents=True)
@@ -75,8 +76,6 @@ def llm_request(
     message_counter = 0
     for m in messages:
         if m.content is not None and m.content != "":
-            print(f"FILE>>> {message_counter}_{m.role}")
-            print(f"CONTENT>>> {m.content}")
             log_text(m.content, f"{message_counter}_{m.role}")
         elif m.tool_calls is not None:
             log_json(m.tool_calls, f"{message_counter}_{m.role}")
@@ -104,8 +103,6 @@ def llm_request(
         session = requests.Session()
         session.trust_env = False
 
-        print(json.dumps(json_body, indent=4))
-
         start_time = time.perf_counter()
 
         response = requests.post(
@@ -119,9 +116,6 @@ def llm_request(
         )
 
         latency_ms = (time.perf_counter() - start_time) * 1000
-
-        print("Status:", response.status_code, flush=True)
-        print("Body:", response.text, flush=True)
 
     except requests.exceptions.RequestException as exc:
         print("Exception type:", type(exc).__name__, flush=True)
@@ -148,9 +142,6 @@ def llm_request(
         end = msg_content.rfind('}') + 1
         if start != -1 and end != 0:
             clean_string = msg_content[start:end]
-            print("CLEAN_STRING!!!")
-            print(clean_string)
-            print("CLEAN_STRING!!!")
             obj = json.loads(clean_string)
             log_json(obj, log_name)
         else:

@@ -54,7 +54,8 @@ class Tool(BaseModel):
                 properties = {key: Property(
                     type = arg.type,
                     tags = arg.tags,
-                    description = arg.description
+                    description = arg.description,
+                    enum = arg.enum
                 ) for key, arg in tool.arguments.items()}
             )
         ))
@@ -119,11 +120,16 @@ class Affordance(BaseModel):
     parameters: Property
 
 
+class CoreNode(BaseModel):
+    description: str
+    entity_snapshots: Dict[str, str]
+
+
 class Entity(BaseModel):
     id: str
     tags: list[str]
     description: str
-    affordances: list[str]
+    relations: Dict[str, CoreNode]
 
 
 class AgentRoutine(BaseModel):

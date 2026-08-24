@@ -48,17 +48,7 @@ def get_op_foundations(agent: Agent):
         if entity.id in relevant_entity_ids
     ]
 
-    affordances = [
-        {
-            "affordance_id": entity.id + "." + affordance,
-            "description": entity.description,
-            "affected_entity_id": entity.id
-        }
-        for entity in agent.blackboard.attended_entities.values()
-        for affordance in entity.affordances
-    ]
-
-    return state, context, entities, affordances
+    return state, context, entities
 
 
 def get_op_foundations_setup(agent: AgentSetup):

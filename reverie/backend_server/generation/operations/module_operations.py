@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from persona.aid import AgentRoutine, ChatMessage, GroundingSequence, Schema, Tool, ToolCall, ToolSimplified
 from generation.prompt_building import create_affordances_sec, create_auxschemas_sec, create_current_task_sec, create_event_sec, create_failed_action_sec, create_goal_sec, create_instructions_sec, create_mainschema_sec, create_memory_sec, create_routines_sec, create_state_sec, create_task_sec, create_entities_sec, create_tools_sec
 from generation.requests import llm_request
-from persona.memory_structures.memory_blocks.node import CoreNode
+from persona.aid import CoreNode
 from persona.aid import ChatMessage
 from standard import FOCAL_POINT_SCHEMA, FOCAL_POINT_AUX_SCHEMAS, ROUTINE_SELECTION_SCHEMA, STANDARD_INSTRUCTIONS, STANDARD_ROUTINE_SELECTION_INSTRUCTIONS, FocalPointsSchema, GroundSchema, PlanSchema, ThoughtSchema, RoutineSelectionSchema
 from persona.agent import Agent
@@ -56,7 +56,7 @@ def gen_grounding(
     #actions_taken: list[ToolCall]
 ):
     class CustomSchemaA(BaseModel):
-        thoughts: list[str] = Field(description="List of short strings describing the most important conclusions that were drawn from memories and entities")
+        thought: list[str] = Field(description="List of short strings describing the most important conclusions that were drawn from memories and entities")
 
     system_prompt = create_instructions_sec([
         "Respond with a single JSON object",
@@ -69,8 +69,9 @@ def gen_grounding(
         create_state_sec(relevant_state) \
         + create_memory_sec(relevant_memory) \
         + create_entities_sec(entities) \
-        + create_current_task_sec(plan_task) \
+        + create_goal_sec(agent.plan.goal) \
         + create_mainschema_sec(CustomSchemaA.schema_json(indent=4))
+        #+ create_current_task_sec(plan_task) \
 
     messages = [
         ChatMessage(role="system", content=system_prompt),
