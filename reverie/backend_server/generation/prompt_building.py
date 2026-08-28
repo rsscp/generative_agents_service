@@ -160,6 +160,14 @@ def create_entities_sec(entities: list[Dict]):
 
     return result
 
+
+def create_recent_thoughts_sec(thoughts: list[str]):
+    result = "# Recent Thoughts\n"
+    result += json.dumps(thoughts, indent=4) + "\n\n"
+
+    return result
+
+
 def create_affordances_sec(affordances: list[Dict]):
     result = "# Entity Affordances\n"
     result += json.dumps(affordances, indent=4) + "\n\n"
@@ -196,8 +204,8 @@ def create_task_sec(
     return result + task
 
 
-def create_current_task_sec(task: Optional[Dict] = None):
-    return f"# Task\n{json.dumps(task, indent=4)}\n\n"
+def create_current_task_sec(task: str):
+    return f"# Task\n{task}\n\n"
 
 
 def create_failed_action_sec(failed_action: ToolCall):

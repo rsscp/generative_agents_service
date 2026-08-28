@@ -9,7 +9,7 @@ def get_op_foundations(agent: Agent):
         sec_name: [
             {
                 "memory": node.core.description,
-                "entity_snapshots": node.core.entity_snapshots
+                "snapshots": node.core.entity_snapshots
             }
             for node in sec.values()
         ]
@@ -18,7 +18,7 @@ def get_op_foundations(agent: Agent):
     context["core"] = [
         {
             "memory": node.core.description,
-            "entity_snapshots": node.core.entity_snapshots
+            "snapshots": node.core.entity_snapshots
         }
         for node in core
     ]
@@ -42,7 +42,13 @@ def get_op_foundations(agent: Agent):
         {
             "entity_id": entity.id,
             "description": entity.description,
-            "tags": entity.tags
+            "relations": {
+                id: {
+                    "description": detail.description,
+                    "snapshots": detail.entity_snapshots,
+                }
+                for id, detail in entity.relations.items()
+            }
         }
         for entity in agent.blackboard.attended_entities.values()
         if entity.id in relevant_entity_ids

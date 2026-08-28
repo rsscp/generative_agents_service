@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 from persona.aid import AgentRoutine, ChatMessage, GroundingSequence, Schema, Tool, ToolCall, ToolSimplified
-from generation.prompt_building import create_affordances_sec, create_auxschemas_sec, create_current_task_sec, create_event_sec, create_failed_action_sec, create_goal_sec, create_instructions_sec, create_mainschema_sec, create_memory_sec, create_routines_sec, create_state_sec, create_task_sec, create_entities_sec, create_tools_sec
+from generation.prompt_building import *
 from generation.requests import llm_request
 from persona.aid import CoreNode
 from persona.aid import ChatMessage
@@ -26,7 +26,7 @@ def gen_plan(
         memory = relevant_memory,
         entities = entities,
         goal = agent.plan.goal,
-        tools = [Tool.create(t) for t in agent.blackboard.generic_tools.values() if t.enabled],
+        tools = [Tool.create(t) for t in agent.blackboard.generic_tools.values()],
         instructions = agent.settings.planning.instructions,
         schema = PlanSchema.schema_json(indent=4),
         task = "Examine the available tools and your entity knowledge to formulate a plan aligned with your current goal"
@@ -36,7 +36,8 @@ def gen_plan(
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=user_prompt)
         ],
-        log_name = "plan"
+        log_name = "plan",
+        content_format = "json"
     )
 
     if content is not None:
@@ -55,14 +56,16 @@ def gen_grounding(
     failed_action: Optional[ToolCall] = None
     #actions_taken: list[ToolCall]
 ):
-    class CustomSchemaA(BaseModel):
-        thought: list[str] = Field(description="List of short strings describing the most important conclusions that were drawn from memories and entities")
+    # system_prompt = create_instructions_sec([
+    #     "Respond with a single JSON object",
+    #     "Your json response must conform to the schema specified in #Response Schema Definition"
+    #     "The only possible actions are suggested by the tags contained in each entity listed in #Entity Instances"
+    #     "Only produce actions which are suggested by these tags, otherwise default to the action 'Complete this task'"
+    # ])
 
     system_prompt = create_instructions_sec([
-        "Respond with a single JSON object",
-        "Your json response must conform to the schema specified in #Response Schema Definition"
-        "The only possible actions are suggested by the tags contained in each entity listed in #Entity Instances"
-        "Only produce actions which are suggested by these tags, otherwise default to the action 'Complete this task'"
+        "Respond with natural text",
+        "Limit your response to less then 50 words"
     ])
 
     user_prompt = \
@@ -70,7 +73,9 @@ def gen_grounding(
         + create_memory_sec(relevant_memory) \
         + create_entities_sec(entities) \
         + create_goal_sec(agent.plan.goal) \
-        + create_mainschema_sec(CustomSchemaA.schema_json(indent=4))
+        + create_recent_thoughts_sec(agent.recall.recent_thoughts) \
+        + create_task_sec("Continue the thought sequence in by adding a thought derived from your goals, memories, previous thoughts and the current state of the world. Also finish with a suggestion to what the next immediate action should be, for example in the format: 'Next call: <chosen action>'.")
+        #+ create_mainschema_sec(CustomSchemaA.schema_json(indent=4))
         #+ create_current_task_sec(plan_task) \
 
     messages = [
@@ -80,7 +85,9 @@ def gen_grounding(
         
     content, tool_calls = llm_request(
         messages = messages,
-        log_name = "ground_phase_1"
+        log_name = "ground_phase_1",
+        content_format = "text",
+        tools = [Tool.create(t) for t in agent.blackboard.generic_tools.values()]
     )
 
     if content is None:
@@ -89,18 +96,17 @@ def gen_grounding(
     else:
         increment_prompt_log_counter()
 
-    start = content.find('{')
-    end = content.rfind('}') + 1
-    clean_string = content[start:end]
-    reasoning = json.loads(clean_string)
-    
+    agent.recall.add_recent_thought(content)
+
+    reasoning = content
     system_prompt = create_instructions_sec([
         "Produce tool calls that attempt to execute the actions described in Task"
     ])
 
-    user_prompt = \
-        create_entities_sec(entities) \
+    user_prompt = create_state_sec(relevant_state) \
         + create_memory_sec(relevant_memory) \
+        + create_entities_sec(entities) \
+        + create_goal_sec(agent.plan.goal) \
         + create_current_task_sec(reasoning)
 
     if failed_action is not None:
@@ -117,8 +123,17 @@ def gen_grounding(
     while not valid:
         content, tool_calls = llm_request(
             messages = messages,
-            tools = [Tool.create(t) for t in agent.blackboard.generic_tools.values() if t.enabled],
-            log_name = "ground_phase_2"
+            tools = [
+                Tool.create(t)
+                for t in agent.blackboard.generic_tools.values()
+                if t.enabled
+                if False not in [
+                    a.enum is not None and len(a.enum) > 0
+                    for a in t.arguments.values()
+                ]
+            ],
+            content_format = "text",
+            log_name = "ground_phase_2",
         )
         messages.append(ChatMessage(
             role = "assistant",
@@ -145,7 +160,7 @@ def gen_grounding(
 
     increment_prompt_log_counter()
 
-    return reasoning, final
+    return final
 
 
 def gen_routine_selection(
@@ -166,7 +181,8 @@ def gen_routine_selection(
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=user_prompt)
         ],
-        log_name = "routine_goal"
+        log_name = "routine_goal",
+        content_format = "json"
     )
 
     if content is not None:
@@ -194,7 +210,8 @@ def gen_focal_points(
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=user_prompt)
         ],
-        log_name = "focal_points"
+        log_name = "focal_points",
+        content_format = "json"
     )
 
     if content is not None:
@@ -214,17 +231,18 @@ def gen_node_poignancy(
         "Your response will not contain JSON or aditional text"
     ])
 
-    user_prompt = create_goal_sec(agent.plan.goal)
-    user_prompt += create_memory_sec(relevant_memory)
-    user_prompt += create_event_sec(description)
-    user_prompt += "Respond with an integer between 0 and 100 representing the overall importance of the event presented in Event"
+    user_prompt = create_goal_sec(agent.plan.goal) \
+        + create_memory_sec(relevant_memory) \
+        + create_event_sec(description) \
+        + create_task_sec("Respond with an integer between 0 and 100 representing the overall importance of the event presented in Event")
 
     content, tool_calls = llm_request(
         messages = [
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=user_prompt)
         ],
-        log_name = "poignancy"
+        log_name = "poignancy",
+        content_format = "text"
     )
 
     if content is not None:
@@ -255,7 +273,8 @@ def gen_thought(
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=user_prompt)
         ],
-        log_name = "thought"
+        log_name = "thought",
+        content_format = "json"
     )
 
     if content is not None:

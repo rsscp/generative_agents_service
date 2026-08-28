@@ -138,11 +138,12 @@ class AgentRoutine(BaseModel):
 
 
 class SegmentedGround(BaseModel):
-    reasoning: Dict
+    reasoning: list[str]
     calls: list[ToolCall]
 
 
 class ChatMessage(BaseModel):
     role: str
     content: Optional[str] = None
+    reasoning: Optional[str] = None
     tool_calls: Optional[list[Dict]] = None

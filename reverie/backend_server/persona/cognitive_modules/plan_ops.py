@@ -35,7 +35,7 @@ def op_ground(agent: Agent, correction: bool):
     if correction:
         failed_action = agent.plan.current_action
 
-    reasoning, calls = gen_grounding(
+    calls = gen_grounding(
         agent,
         state,
         context, 
@@ -47,7 +47,7 @@ def op_ground(agent: Agent, correction: bool):
     
     if calls is not None:
         agent.plan.enqueue_actions(calls)
-        agent.plan.do_log_actions(SegmentedGround(reasoning=reasoning, calls=calls))
+        agent.plan.do_log_actions(SegmentedGround(reasoning=agent.recall.recent_thoughts, calls=calls))
     else:
         raise Exception("Grounding operation failed")
 

@@ -77,6 +77,7 @@ class Recall:
     self.core: list[MemoryNode] = [node_from_core(node) for node in core_nodes]
     self.memory: MemoryBox = MemoryBox(node_sections)
     self.cache: CacheBox = CacheBox({sec: [] for sec in node_sections.keys()})
+    self.recent_thoughts: list[str] = []
     self.entity_snapshots: Dict[str, str] = {entity.id: entity.description for entity in entities}
 
 
@@ -133,6 +134,12 @@ class Recall:
       )
 
     return result
+
+
+  def add_recent_thought(self, thought: str):
+    if len(self.recent_thoughts) > 10: # turn 10 into a variable that is part of configuration
+      self.recent_thoughts.pop(0)
+    self.recent_thoughts.append(thought)
   
 
   def add_task_progress(self, task: str):

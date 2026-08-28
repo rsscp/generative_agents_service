@@ -26,6 +26,7 @@ llm_choices = {
         "model": "openai/gpt-oss-20b",
         "url": "https://api.groq.com/openai/v1/chat/completions",
         "key": keys["groq-gpt-20b"]
+        
     },
     "groq-gpt-120b": {
         "model": "openai/gpt-oss-120b",
@@ -65,8 +66,10 @@ def embedding_request(string: str) -> EmbeddingArray:
 def llm_request(
     messages: list[ChatMessage],
     log_name: str,
+    content_format: str,
     tools: Optional[list[Tool]] = None,
-    llm_choice: str = llm_choice #"gemini-3.6-flash" #"custom_gemma4:e4b" #"qwen3.5:4b" #
+    llm_choice: str = llm_choice, #"gemini-3.6-flash" #"custom_gemma4:e4b" #"qwen3.5:4b" #
+    reasoning_effort: str = "none"
 ):
       
     from pathlib import Path
@@ -76,9 +79,11 @@ def llm_request(
     message_counter = 0
     for m in messages:
         if m.content is not None and m.content != "":
-            log_text(m.content, f"{message_counter}_{m.role}")
+            log_text(m.content, f"{message_counter}_{m.role}_content")
+        if m.reasoning is not None and m.reasoning != "":
+            log_text(m.reasoning, f"{message_counter}_{m.role}_reasoning")
         elif m.tool_calls is not None:
-            log_json(m.tool_calls, f"{message_counter}_{m.role}")
+            log_json(m.tool_calls, f"{message_counter}_{m.role}_calls")
         message_counter += 1
 
     headers={ "Content-Type": "application/json" }
@@ -88,7 +93,7 @@ def llm_request(
         "messages": [m.dict(exclude_none=True) for m in messages],
         "stream": False,
         "temperature": 0.2,
-        "reasoning_effort": "low"
+        "reasoning_effort": reasoning_effort
     }
 
     if llm_choices[llm_choice]['key'] is not None:
@@ -137,15 +142,23 @@ def llm_request(
 
     if "content" in data["choices"][0]["message"].keys() and data["choices"][0]["message"]["content"] != "":
         msg_content = data["choices"][0]["message"]["content"]
-
         start = msg_content.find('{')
         end = msg_content.rfind('}') + 1
-        if start != -1 and end != 0:
+
+        print("<CONTENT>\n" + msg_content)
+
+        if content_format == "json":
             clean_string = msg_content[start:end]
             obj = json.loads(clean_string)
             log_json(obj, log_name)
-        else:
+        elif content_format == "text":
             log_text(msg_content, log_name)
+        else:
+            raise Exception(f"Format '{content_format}' is not valid")
+
+    if "reasoning" in data["choices"][0]["message"].keys() and data["choices"][0]["message"]["reasoning"] != "":
+        msg_reasoning = data["choices"][0]["message"]["reasoning"]
+        log_text(msg_reasoning, "reasoning")
 
     if "tool_calls" in data["choices"][0]["message"].keys():
         msg_tool_calls = data["choices"][0]["message"]["tool_calls"]
