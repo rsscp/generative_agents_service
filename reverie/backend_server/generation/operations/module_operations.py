@@ -98,22 +98,19 @@ def gen_grounding(
 
     agent.recall.add_recent_thought(content)
 
-    reasoning = content
-    system_prompt = create_instructions_sec([
-        "Produce tool calls that attempt to execute the actions described in Task"
-    ])
-
-    user_prompt = create_state_sec(relevant_state) \
-        + create_memory_sec(relevant_memory) \
-        + create_entities_sec(entities) \
-        + create_goal_sec(agent.plan.goal) \
-        + create_current_task_sec(reasoning)
+    user_prompt = "Now produce tool calls that attempt to execute the action you indicated"
 
     if failed_action is not None:
         user_prompt += create_failed_action_sec(failed_action)
 
-    messages = [
-        ChatMessage(role="system", content=system_prompt),
+    reasoning_message = ChatMessage(role = "assistant")
+    if content is not None:
+        reasoning_message.content = content
+    if tool_calls is not None:
+        reasoning_message.tool_calls = tool_calls
+
+    messages += [
+        reasoning_message,
         ChatMessage(role="user", content=user_prompt)
     ]
 
@@ -135,11 +132,14 @@ def gen_grounding(
             content_format = "text",
             log_name = "ground_phase_2",
         )
-        messages.append(ChatMessage(
-            role = "assistant",
-            content = content,
-            tool_calls = tool_calls
-        ))
+
+        new_message = ChatMessage(role = "assistant")
+        if content is not None:
+            new_message.content = content
+        if tool_calls is not None:
+            new_message.tool_calls = tool_calls
+
+        messages.append(new_message)
 
         if tool_calls is None:
             log_text("No tool calls were created", "error")
